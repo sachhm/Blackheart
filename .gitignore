@@ -20,6 +20,7 @@ cmake-build-*/
 *.aax
 
 # IDE / OS
+NOTES/
 .vscode/
 .idea/
 *.xcuserdata/

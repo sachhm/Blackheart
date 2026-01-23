@@ -1,5 +1,5 @@
 # Blackheart
-
+![alt text](Images/blackheartv1.0.png)
 A JUCE-based VST3 audio effect plugin combining analog-style octave fuzz with chaotic digital pitch-shifting and modulation. Designed for heavy, downtuned guitar and experimental sound design.
 
 ## Project Overview
