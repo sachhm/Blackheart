@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="CHxBSi" name="Blackheart" projectType="audioplug" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" cppLanguageStandard="17"
+              companyName="Moka" pluginManufacturer="Moka" bundleIdentifier="com.moka.Blackheart"
+              pluginManufacturerCode="Moka">
+  <MAINGROUP id="zwJvOD" name="Blackheart">
+    <GROUP id="{E8CD8262-7D4A-F083-6209-9E3D8E9B51C4}" name="Source">
+      <GROUP id="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}" name="Parameters">
+        <FILE id="pId001" name="ParameterIDs.h" compile="0" resource="0"
+              file="Source/Parameters/ParameterIDs.h"/>
+      </GROUP>
+      <GROUP id="{B2C3D4E5-F6A7-8901-BCDE-F12345678901}" name="DSP">
+        <FILE id="dsp001" name="InputConditioner.h" compile="0" resource="0"
+              file="Source/DSP/InputConditioner.h"/>
+        <FILE id="dsp002" name="InputConditioner.cpp" compile="1" resource="0"
+              file="Source/DSP/InputConditioner.cpp"/>
+        <FILE id="dsp003" name="FuzzEngine.h" compile="0" resource="0"
+              file="Source/DSP/FuzzEngine.h"/>
+        <FILE id="dsp004" name="FuzzEngine.cpp" compile="1" resource="0"
+              file="Source/DSP/FuzzEngine.cpp"/>
+        <FILE id="dsp005" name="OctaveGenerator.h" compile="0" resource="0"
+              file="Source/DSP/OctaveGenerator.h"/>
+        <FILE id="dsp006" name="OctaveGenerator.cpp" compile="1" resource="0"
+              file="Source/DSP/OctaveGenerator.cpp"/>
+        <FILE id="dsp007" name="DynamicGate.h" compile="0" resource="0"
+              file="Source/DSP/DynamicGate.h"/>
+        <FILE id="dsp008" name="DynamicGate.cpp" compile="1" resource="0"
+              file="Source/DSP/DynamicGate.cpp"/>
+        <FILE id="dsp009" name="BlendMixer.h" compile="0" resource="0"
+              file="Source/DSP/BlendMixer.h"/>
+        <FILE id="dsp010" name="BlendMixer.cpp" compile="1" resource="0"
+              file="Source/DSP/BlendMixer.cpp"/>
+        <FILE id="dsp011" name="PitchShifter.h" compile="0" resource="0"
+              file="Source/DSP/PitchShifter.h"/>
+        <FILE id="dsp012" name="PitchShifter.cpp" compile="1" resource="0"
+              file="Source/DSP/PitchShifter.cpp"/>
+        <FILE id="dsp013" name="ChaosModulator.h" compile="0" resource="0"
+              file="Source/DSP/ChaosModulator.h"/>
+        <FILE id="dsp014" name="ChaosModulator.cpp" compile="1" resource="0"
+              file="Source/DSP/ChaosModulator.cpp"/>
+        <FILE id="dsp015" name="EnvelopeFollower.h" compile="0" resource="0"
+              file="Source/DSP/EnvelopeFollower.h"/>
+        <FILE id="dsp016" name="EnvelopeFollower.cpp" compile="1" resource="0"
+              file="Source/DSP/EnvelopeFollower.cpp"/>
+        <FILE id="dsp017" name="OutputLimiter.h" compile="0" resource="0"
+              file="Source/DSP/OutputLimiter.h"/>
+        <FILE id="dsp018" name="OutputLimiter.cpp" compile="1" resource="0"
+              file="Source/DSP/OutputLimiter.cpp"/>
+      </GROUP>
+      <FILE id="WWKCx9" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
+      <FILE id="whPbY5" name="PluginProcessor.h" compile="0" resource="0"
+            file="Source/PluginProcessor.h"/>
+      <FILE id="mmSnB6" name="PluginEditor.cpp" compile="1" resource="0"
+            file="Source/PluginEditor.cpp"/>
+      <FILE id="RHqdgG" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
+  <EXPORTFORMATS>
+    <XCODE_MAC targetFolder="Builds/MacOSX">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Blackheart"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="Blackheart"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_dsp" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../JUCE/modules"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+  </EXPORTFORMATS>
+</JUCERPROJECT>

@@ -1,0 +1,36 @@
+# Build artifacts
+Builds/
+build/
+cmake-build-*/
+
+# Binaries
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+
+# Plugin formats
+*.vst3
+*.component
+*.au
+*.aax
+
+# IDE / OS
+.vscode/
+.idea/
+*.xcuserdata/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+
+# JUCE generated
+JuceLibraryCode/
+
+# AI assistance documentation
+CLAUDE.md
+CLAUDE.MD
