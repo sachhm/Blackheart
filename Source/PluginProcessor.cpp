@@ -529,6 +529,7 @@ void BlackheartAudioProcessor::updateDSPParameters()
     pitchShifter.setRiseTime(smoothedRise);
     pitchShifter.setChaosAmount(smoothedChaos);
     pitchShifter.setPanic(smoothedParams.panic.getCurrentValue());
+    pitchShifter.setRingModSpeed(smoothedSpeed);
 
     // Chaos Modulator parameters
     chaosModulator.setSpeed(smoothedSpeed);
