@@ -455,8 +455,8 @@ void BlackheartAudioProcessor::updateDSPParameters()
     const float smoothedSpeed  = smoothedParams.speed.getCurrentValue();
     const float smoothedChaos  = smoothedParams.chaos.getCurrentValue();
     const float smoothedRise   = smoothedParams.rise.getCurrentValue();
-    const float smoothedOct1   = smoothedParams.octave1.getCurrentValue();
-    const float smoothedOct2   = smoothedParams.octave2.getCurrentValue();
+    // Note: octave1/octave2 SmoothedValues intentionally not read here.
+    // Octave buttons use raw booleans (currentOctave1/2) for instant response.
 
     // Fuzz Engine parameters
     fuzzEngine.setGain(smoothedGain);
@@ -472,9 +472,11 @@ void BlackheartAudioProcessor::updateDSPParameters()
     // Blend Mixer parameters
     blendMixer.setBlend(smoothedBlend);
 
-    // Pitch Shifter parameters
-    pitchShifter.setOctaveOneActive(smoothedOct1 > 0.5f);
-    pitchShifter.setOctaveTwoActive(smoothedOct2 > 0.5f);
+    // Pitch Shifter parameters — use raw booleans, not smoothed values.
+    // Octave buttons are momentary and need instant activation.
+    // The PitchShifter handles its own Rise-based smoothing internally.
+    pitchShifter.setOctaveOneActive(currentOctave1);
+    pitchShifter.setOctaveTwoActive(currentOctave2);
     pitchShifter.setRiseTime(smoothedRise);
     pitchShifter.setChaosAmount(smoothedChaos);
 
