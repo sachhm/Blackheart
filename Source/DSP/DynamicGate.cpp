@@ -43,6 +43,10 @@ void DynamicGate::process(juce::AudioBuffer<float>& buffer)
     hysteresisThresholdHigh = dynamicThreshold;
     hysteresisThresholdLow = dynamicThreshold * juce::Decibels::decibelsToGain(-hysteresisDb);
 
+    // Glare-dependent release: faster at high glare for spitty texture
+    const float glareRelease = 80.0f - glareInfluence * 50.0f;  // 80ms → 30ms
+    envelopeFollower.setReleaseTime(std::max(20.0f, glareRelease));
+
     for (int sample = 0; sample < numSamples; ++sample)
     {
         float maxLevel = 0.0f;
@@ -84,7 +88,10 @@ float DynamicGate::calculateDynamicThreshold() const
     // Use linear scaling instead of squared for more predictable gate response
     // Reduced multipliers for less aggressive gating (more playable at high gain)
     const float gainBoost = gainInfluence * 12.0f;   // Was influence² * 20
-    const float glareBoost = glareInfluence * 10.0f; // Was influence² * 15
+
+    // Exponential glare coupling: gentle at low glare, aggressive at high
+    const float glareCurved = glareInfluence * glareInfluence * glareInfluence;  // cubic
+    const float glareBoost = glareCurved * 18.0f;
 
     const float effectiveThresholdDb = baseThresholdDb + gainBoost + glareBoost;
 
