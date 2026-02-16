@@ -15,6 +15,7 @@ BlackheartAudioProcessorEditor::BlackheartAudioProcessorEditor(BlackheartAudioPr
     addAndMakeVisible(speedKnob);
     addAndMakeVisible(chaosKnob);
     addAndMakeVisible(riseKnob);
+    addAndMakeVisible(panicKnob);
 
     // Mode buttons and shape knob
     addAndMakeVisible(modeScreamButton);
@@ -112,6 +113,9 @@ void BlackheartAudioProcessorEditor::setupKnobAttachments()
     shapeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, ParameterIDs::shape, shapeKnob.getSlider());
 
+    panicAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, ParameterIDs::panic, panicKnob.getSlider());
+
     // Update value labels after attachments are made
     gainKnob.updateValueLabel();
     glareKnob.updateValueLabel();
@@ -121,6 +125,7 @@ void BlackheartAudioProcessorEditor::setupKnobAttachments()
     chaosKnob.updateValueLabel();
     riseKnob.updateValueLabel();
     shapeKnob.updateValueLabel();
+    panicKnob.updateValueLabel();
 }
 
 void BlackheartAudioProcessorEditor::setupOctaveButtons()
@@ -347,16 +352,22 @@ void BlackheartAudioProcessorEditor::resized()
         chaosSectionLabel.setBounds(area.removeFromTop(20));
         area.removeFromTop(8);
 
-        // Top row: Speed, Chaos, Rise knobs
-        const int knobWidth = area.getWidth() / 3;
-        const int knobHeight = 95;
+        // Top row: Speed, Chaos knobs (2 wide)
+        const int knobWidth = area.getWidth() / 2;
+        const int knobHeight = 85;
 
         auto topRow = area.removeFromTop(knobHeight);
         speedKnob.setBounds(topRow.removeFromLeft(knobWidth));
-        chaosKnob.setBounds(topRow.removeFromLeft(knobWidth));
-        riseKnob.setBounds(topRow);
+        chaosKnob.setBounds(topRow);
 
-        area.removeFromTop(15);
+        area.removeFromTop(4);
+
+        // Second row: Rise, Panic knobs (2 wide)
+        auto row2 = area.removeFromTop(knobHeight);
+        riseKnob.setBounds(row2.removeFromLeft(knobWidth));
+        panicKnob.setBounds(row2);
+
+        area.removeFromTop(10);
 
         // Octave buttons with LEDs
         auto buttonArea = area.removeFromTop(50);
@@ -364,17 +375,14 @@ void BlackheartAudioProcessorEditor::resized()
         const int ledSize = 12;
         const int buttonGap = 30;
 
-        // Center the buttons
         const int totalWidth = buttonWidth * 2 + buttonGap;
         const int startX = (buttonArea.getWidth() - totalWidth) / 2;
 
-        // Octave 1 button and LED
         auto oct1Area = buttonArea.withX(buttonArea.getX() + startX).withWidth(buttonWidth);
         octave1Button.setBounds(oct1Area.withHeight(40));
         octave1LED.setBounds(oct1Area.getX() + (buttonWidth - ledSize) / 2,
                              oct1Area.getBottom() - 8, ledSize, ledSize);
 
-        // Octave 2 button and LED
         auto oct2Area = buttonArea.withX(buttonArea.getX() + startX + buttonWidth + buttonGap).withWidth(buttonWidth);
         octave2Button.setBounds(oct2Area.withHeight(40));
         octave2LED.setBounds(oct2Area.getX() + (buttonWidth - ledSize) / 2,
