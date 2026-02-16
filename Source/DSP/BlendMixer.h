@@ -29,7 +29,7 @@ private:
     double sampleRate = 44100.0;
     int maxBlockSize = 512;
 
-    juce::SmoothedValue<float> blend { 0.7f };
+    juce::SmoothedValue<float> blend { 0.3f };  // Inverted: 0.3 = mostly wet
 
     float lastDryGain = 0.0f;
     float lastWetGain = 1.0f;
