@@ -609,9 +609,10 @@ private:
     LabeledKnob shapeKnob { "SHAPE", "%", "Active EQ sweep — tight to full destruction" };
 
     // Knobs - Chaos section
-    LabeledKnob speedKnob  { "SPEED", "Hz", "Chaos modulation rate" };
+    LabeledKnob speedKnob  { "SPEED", "%", "Low: chaos modulation rate. High: ring modulation" };
     LabeledKnob chaosKnob  { "CHAOS", "%", "Modulation depth and randomness" };
     LabeledKnob riseKnob   { "RISE", "ms", "Pitch shift attack/release time" };
+    LabeledKnob panicKnob  { "PANIC", "%", "Detuned pitch destruction — subtle chorus to full atonal chaos" };
 
     // Octave buttons
     MomentaryButton octave1Button { "+1 OCT" };
@@ -642,6 +643,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> chaosAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> riseAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shapeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> panicAttachment;
 
     void setupKnobAttachments();
     void setupOctaveButtons();
