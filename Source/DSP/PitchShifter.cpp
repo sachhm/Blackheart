@@ -419,4 +419,9 @@ void PitchShifter::setTimingModulation(float mod)
     timingModulation = std::isfinite(mod) ? juce::jlimit(-1.0f, 1.0f, mod) : 0.0f;
 }
 
+void PitchShifter::setPanic(float normalizedPanic)
+{
+    juce::ignoreUnused(normalizedPanic);
+}
+
 } // namespace DSP

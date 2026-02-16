@@ -27,6 +27,7 @@ BlackheartAudioProcessor::BlackheartAudioProcessor()
     octave2Param = apvts.getRawParameterValue(ParameterIDs::octave2);
     modeParam = apvts.getRawParameterValue(ParameterIDs::mode);
     shapeParam = apvts.getRawParameterValue(ParameterIDs::shape);
+    panicParam = apvts.getRawParameterValue(ParameterIDs::panic);
 }
 
 BlackheartAudioProcessor::~BlackheartAudioProcessor()
@@ -117,8 +118,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout BlackheartAudioProcessor::cr
         ParameterIDs::speedRange(),
         ParameterIDs::Defaults::speed,
         juce::AudioParameterFloatAttributes()
-            .withStringFromValueFunction(hzFormat)
-            .withValueFromStringFunction(hzParse)));
+            .withStringFromValueFunction(percentFormat)
+            .withValueFromStringFunction(percentParse)));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { ParameterIDs::chaos, 1 },
@@ -178,6 +179,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout BlackheartAudioProcessor::cr
         ParameterIDs::Labels::shape,
         ParameterIDs::shapeRange(),
         ParameterIDs::Defaults::shape,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction(percentFormat)
+            .withValueFromStringFunction(percentParse)));
+
+    // PANIC: Detuned pitch destruction
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::panic, 1 },
+        ParameterIDs::Labels::panic,
+        ParameterIDs::panicRange(),
+        ParameterIDs::Defaults::panic,
         juce::AudioParameterFloatAttributes()
             .withStringFromValueFunction(percentFormat)
             .withValueFromStringFunction(percentParse)));
@@ -478,6 +489,7 @@ void BlackheartAudioProcessor::fetchParameterValues()
     currentOctave2 = octave2Param->load() > 0.5f;
     currentMode = static_cast<int>(modeParam->load() + 0.5f);
     currentShape = shapeParam->load();
+    currentPanic = panicParam->load();
 }
 
 void BlackheartAudioProcessor::updateDSPParameters()
@@ -516,6 +528,7 @@ void BlackheartAudioProcessor::updateDSPParameters()
     pitchShifter.setOctaveTwoActive(currentOctave2);
     pitchShifter.setRiseTime(smoothedRise);
     pitchShifter.setChaosAmount(smoothedChaos);
+    pitchShifter.setPanic(smoothedParams.panic.getCurrentValue());
 
     // Chaos Modulator parameters
     chaosModulator.setSpeed(smoothedSpeed);
@@ -573,14 +586,14 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     {
         smoothedParams.setCurrentAndTargetValue(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic);
         isFirstBlock = false;
     }
     else
     {
         smoothedParams.updateTargets(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic);
     }
 
     updateDSPParameters();
@@ -789,7 +802,7 @@ void BlackheartAudioProcessor::setStateInformation(const void* data, int sizeInB
 
         smoothedParams.setCurrentAndTargetValue(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic);
         }
     }
 }

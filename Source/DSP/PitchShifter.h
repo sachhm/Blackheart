@@ -19,6 +19,7 @@ public:
     void setOctaveTwoActive(bool active);
     void setRiseTime(float riseTimeMs);
     void setChaosAmount(float normalizedChaos);
+    void setPanic(float normalizedPanic);
 
     void setPitchModulation(float mod);
     void setGrainSizeModulation(float mod);
