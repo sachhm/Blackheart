@@ -14,6 +14,8 @@ inline constexpr auto chaos    { "chaos" };
 inline constexpr auto rise     { "rise" };
 inline constexpr auto octave1  { "octave1" };
 inline constexpr auto octave2  { "octave2" };
+inline constexpr auto mode     { "mode" };
+inline constexpr auto shape    { "shape" };
 
 namespace Defaults
 {
@@ -26,6 +28,8 @@ namespace Defaults
     inline constexpr float rise    = 50.0f;
     inline constexpr bool  octave1 = false;
     inline constexpr bool  octave2 = false;
+    inline constexpr float mode    = 1.0f;   // 0=Up(Screaming), 1=Center(Overdrive), 2=Down(Doom)
+    inline constexpr float shape   = 0.5f;
 }
 
 namespace Ranges
@@ -64,6 +68,16 @@ namespace Ranges
     inline constexpr float riseMax   = 500.0f;
     inline constexpr float riseStep  = 1.0f;
     inline constexpr float riseSkew  = 0.35f;
+
+    inline constexpr float modeMin   = 0.0f;
+    inline constexpr float modeMax   = 2.0f;
+    inline constexpr float modeStep  = 1.0f;
+    inline constexpr float modeSkew  = 1.0f;
+
+    inline constexpr float shapeMin  = 0.0f;
+    inline constexpr float shapeMax  = 1.0f;
+    inline constexpr float shapeStep = 0.01f;
+    inline constexpr float shapeSkew = 1.0f;
 }
 
 namespace Smoothing
@@ -76,6 +90,8 @@ namespace Smoothing
     inline constexpr double chaosRampSec  = 0.03;   // More responsive chaos
     inline constexpr double riseRampSec   = 0.01;   // Keep fast for pitch transitions
     inline constexpr double octaveRampSec = 0.008;  // Slightly slower for smoother octave transitions
+    inline constexpr double shapeRampSec  = 0.02;   // Smooth shape transitions
+    // MODE has no smoothing — discrete switch, instant change
 }
 
 namespace Labels
@@ -89,6 +105,8 @@ namespace Labels
     inline const juce::String rise    { "Rise" };
     inline const juce::String octave1 { "Octave +1" };
     inline const juce::String octave2 { "Octave +2" };
+    inline const juce::String mode    { "Mode" };
+    inline const juce::String shape   { "Shape" };
 }
 
 namespace Units
@@ -137,6 +155,16 @@ inline juce::NormalisableRange<float> chaosRange()
 inline juce::NormalisableRange<float> riseRange()
 {
     return makeRange(Ranges::riseMin, Ranges::riseMax, Ranges::riseStep, Ranges::riseSkew);
+}
+
+inline juce::NormalisableRange<float> modeRange()
+{
+    return makeRange(Ranges::modeMin, Ranges::modeMax, Ranges::modeStep, Ranges::modeSkew);
+}
+
+inline juce::NormalisableRange<float> shapeRange()
+{
+    return makeRange(Ranges::shapeMin, Ranges::shapeMax, Ranges::shapeStep, Ranges::shapeSkew);
 }
 
 } // namespace ParameterIDs
