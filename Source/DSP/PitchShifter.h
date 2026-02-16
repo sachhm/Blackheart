@@ -20,6 +20,7 @@ public:
     void setRiseTime(float riseTimeMs);
     void setChaosAmount(float normalizedChaos);
     void setPanic(float normalizedPanic);
+    void setRingModSpeed(float normalizedSpeed);
 
     void setPitchModulation(float mod);
     void setGrainSizeModulation(float mod);
@@ -47,7 +48,7 @@ private:
         Disengaging
     };
 
-    float getGrainWindow(float phase) const;
+    float getGrainWindow(float phase, float harshness) const;
     float readFromBuffer(int channel, float position) const;
     void updateGrain(Grain& grain, float pitchRatio, int grainSizeSamples);
     void updateTransition();
@@ -57,7 +58,6 @@ private:
     double sampleRate = 44100.0;
     int maxBlockSize = 512;
 
-    // Use atomics for thread-safe state communication
     std::atomic<bool> octaveOneActive { false };
     std::atomic<bool> octaveTwoActive { false };
     bool prevOctaveOneActive = false;
@@ -86,19 +86,36 @@ private:
     float antiClickFadeGain = 1.0f;
 
     juce::SmoothedValue<float> chaos { 0.0f };
+    juce::SmoothedValue<float> panic { 0.0f };
 
     float pitchModulation = 0.0f;
     float grainSizeModulation = 0.0f;
     float timingModulation = 0.0f;
 
+    // PANIC — detune engine
+    float panicAmount = 0.0f;
+
+    // Ring modulation
+    float ringModPhase = 0.0f;
+    float ringModFreq = 0.0f;
+    float ringModMix = 0.0f;
+
+    // Feedback
+    float feedbackSample = 0.0f;
+
+    // Variable grain count
+    int activeGrainCount = 2;
+
     static constexpr int maxChannels = 2;
     static constexpr int delayBufferSize = 8192;
-    static constexpr int numGrains = 2;
+    static constexpr int maxGrains = 4;
+    static constexpr int maxDetuneGrains = 2;
 
     std::array<std::array<float, delayBufferSize>, maxChannels> delayBuffer {};
     int writePosition = 0;
 
-    std::array<Grain, numGrains> grains;
+    std::array<Grain, maxGrains> grains;
+    std::array<Grain, maxDetuneGrains> detuneGrains;
 
     int grainSizeSamples = 1024;
     static constexpr float minGrainMs = 20.0f;
