@@ -306,9 +306,9 @@ void BlackheartAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     // Stage 7: Chaos Modulator
     chaosModulator.prepare(spec);
     chaosModulator.setResponseCurve(DSP::ChaosModulator::ResponseCurve::Exponential);
-    chaosModulator.setEnvelopeSensitivity(1.2f);
-    chaosModulator.setEnvelopeThreshold(0.05f);
-    chaosModulator.setEnvelopeAttack(10.0f);
+    chaosModulator.setEnvelopeSensitivity(2.0f);
+    chaosModulator.setEnvelopeThreshold(0.02f);
+    chaosModulator.setEnvelopeAttack(3.0f);
     chaosModulator.setEnvelopeRelease(100.0f);
 
     // Stage 8: Output Limiter
