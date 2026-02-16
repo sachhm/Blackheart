@@ -25,6 +25,8 @@ BlackheartAudioProcessor::BlackheartAudioProcessor()
     riseParam    = apvts.getRawParameterValue(ParameterIDs::rise);
     octave1Param = apvts.getRawParameterValue(ParameterIDs::octave1);
     octave2Param = apvts.getRawParameterValue(ParameterIDs::octave2);
+    modeParam = apvts.getRawParameterValue(ParameterIDs::mode);
+    shapeParam = apvts.getRawParameterValue(ParameterIDs::shape);
 }
 
 BlackheartAudioProcessor::~BlackheartAudioProcessor()
@@ -149,6 +151,36 @@ juce::AudioProcessorValueTreeState::ParameterLayout BlackheartAudioProcessor::cr
         ParameterIDs::Defaults::octave2,
         juce::AudioParameterBoolAttributes()
             .withStringFromValueFunction([](bool value, int) { return value ? "ON" : "OFF"; })));
+
+
+    // MODE: 3-position switch (0=Screaming, 1=Overdrive, 2=Doom)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::mode, 1 },
+        ParameterIDs::Labels::mode,
+        ParameterIDs::modeRange(),
+        ParameterIDs::Defaults::mode,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float value, int) {
+                int v = static_cast<int>(value + 0.5f);
+                if (v == 0) return juce::String("Screaming");
+                if (v == 2) return juce::String("Doom");
+                return juce::String("Overdrive");
+            })
+            .withValueFromStringFunction([](const juce::String& text) {
+                if (text.containsIgnoreCase("scream")) return 0.0f;
+                if (text.containsIgnoreCase("doom")) return 2.0f;
+                return 1.0f;
+            })));
+
+    // SHAPE: Active EQ sweep
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::shape, 1 },
+        ParameterIDs::Labels::shape,
+        ParameterIDs::shapeRange(),
+        ParameterIDs::Defaults::shape,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction(percentFormat)
+            .withValueFromStringFunction(percentParse)));
 
     return layout;
 }
@@ -444,6 +476,8 @@ void BlackheartAudioProcessor::fetchParameterValues()
     currentRise   = riseParam->load();
     currentOctave1 = octave1Param->load() > 0.5f;
     currentOctave2 = octave2Param->load() > 0.5f;
+    currentMode = static_cast<int>(modeParam->load() + 0.5f);
+    currentShape = shapeParam->load();
 }
 
 void BlackheartAudioProcessor::updateDSPParameters()
@@ -455,12 +489,15 @@ void BlackheartAudioProcessor::updateDSPParameters()
     const float smoothedSpeed  = smoothedParams.speed.getCurrentValue();
     const float smoothedChaos  = smoothedParams.chaos.getCurrentValue();
     const float smoothedRise   = smoothedParams.rise.getCurrentValue();
+    const float smoothedShape = smoothedParams.shape.getCurrentValue();
     // Note: octave1/octave2 SmoothedValues intentionally not read here.
     // Octave buttons use raw booleans (currentOctave1/2) for instant response.
 
     // Fuzz Engine parameters
     fuzzEngine.setGain(smoothedGain);
     fuzzEngine.setLevel(smoothedLevel);
+    fuzzEngine.setMode(currentMode);
+    fuzzEngine.setShape(smoothedShape);
 
     // Octave Generator parameters
     octaveGenerator.setGlare(smoothedGlare);
@@ -536,14 +573,14 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     {
         smoothedParams.setCurrentAndTargetValue(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape);
         isFirstBlock = false;
     }
     else
     {
         smoothedParams.updateTargets(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape);
     }
 
     updateDSPParameters();
@@ -750,9 +787,9 @@ void BlackheartAudioProcessor::setStateInformation(const void* data, int sizeInB
             const float oct1Float = currentOctave1 ? 1.0f : 0.0f;
             const float oct2Float = currentOctave2 ? 1.0f : 0.0f;
 
-            smoothedParams.setCurrentAndTargetValue(
-                currentGain, currentGlare, currentBlend, currentLevel,
-                currentSpeed, currentChaos, currentRise, oct1Float, oct2Float);
+        smoothedParams.setCurrentAndTargetValue(
+            currentGain, currentGlare, currentBlend, currentLevel,
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape);
         }
     }
 }
