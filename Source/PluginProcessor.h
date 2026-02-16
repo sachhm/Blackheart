@@ -110,6 +110,7 @@ struct SmoothedParameters
     juce::SmoothedValue<float> octave1;
     juce::SmoothedValue<float> octave2;
     juce::SmoothedValue<float> shape;
+    juce::SmoothedValue<float> panic;
 
     void prepare(double sampleRate)
     {
@@ -123,11 +124,12 @@ struct SmoothedParameters
         octave1.reset(sampleRate, ParameterIDs::Smoothing::octaveRampSec);
         octave2.reset(sampleRate, ParameterIDs::Smoothing::octaveRampSec);
         shape.reset(sampleRate, ParameterIDs::Smoothing::shapeRampSec);
+        panic.reset(sampleRate, ParameterIDs::Smoothing::panicRampSec);
     }
 
     void setCurrentAndTargetValue(float gainVal, float glareVal, float blendVal,
                                    float levelVal, float speedVal, float chaosVal,
-                                   float riseVal, float oct1Val, float oct2Val, float shapeVal)
+                                   float riseVal, float oct1Val, float oct2Val, float shapeVal, float panicVal)
     {
         gain.setCurrentAndTargetValue(gainVal);
         glare.setCurrentAndTargetValue(glareVal);
@@ -139,11 +141,12 @@ struct SmoothedParameters
         octave1.setCurrentAndTargetValue(oct1Val);
         octave2.setCurrentAndTargetValue(oct2Val);
         shape.setCurrentAndTargetValue(shapeVal);
+        panic.setCurrentAndTargetValue(panicVal);
     }
 
     void updateTargets(float gainVal, float glareVal, float blendVal,
                        float levelVal, float speedVal, float chaosVal,
-                       float riseVal, float oct1Val, float oct2Val, float shapeVal)
+                       float riseVal, float oct1Val, float oct2Val, float shapeVal, float panicVal)
     {
         gain.setTargetValue(gainVal);
         glare.setTargetValue(glareVal);
@@ -155,6 +158,7 @@ struct SmoothedParameters
         octave1.setTargetValue(oct1Val);
         octave2.setTargetValue(oct2Val);
         shape.setTargetValue(shapeVal);
+        panic.setTargetValue(panicVal);
     }
 
     void skip(int numSamples)
@@ -169,6 +173,7 @@ struct SmoothedParameters
         octave1.skip(numSamples);
         octave2.skip(numSamples);
         shape.skip(numSamples);
+        panic.skip(numSamples);
     }
 
     bool isSmoothing() const
@@ -176,7 +181,7 @@ struct SmoothedParameters
         return gain.isSmoothing() || glare.isSmoothing() || blend.isSmoothing() ||
                level.isSmoothing() || speed.isSmoothing() || chaos.isSmoothing() ||
                rise.isSmoothing() || octave1.isSmoothing() || octave2.isSmoothing() ||
-               shape.isSmoothing();
+               shape.isSmoothing() || panic.isSmoothing();
     }
 };
 
@@ -229,6 +234,7 @@ public:
     bool getOctave2() const { return octave2Param->load() > 0.5f; }
     int getMode() const { return static_cast<int>(modeParam->load() + 0.5f); }
     float getShape() const { return shapeParam->load(); }
+    float getPanic() const { return panicParam->load(); }
 
     void setOctave1(bool active);
     void setOctave2(bool active);
@@ -277,6 +283,7 @@ private:
     std::atomic<float>* octave2Param = nullptr;
     std::atomic<float>* modeParam = nullptr;
     std::atomic<float>* shapeParam = nullptr;
+    std::atomic<float>* panicParam = nullptr;
 
     SmoothedParameters smoothedParams;
 
@@ -291,6 +298,7 @@ private:
     bool  currentOctave2 = ParameterIDs::Defaults::octave2;
     int   currentMode = static_cast<int>(ParameterIDs::Defaults::mode);
     float currentShape = ParameterIDs::Defaults::shape;
+    float currentPanic = ParameterIDs::Defaults::panic;
 
     DSP::InputConditioner inputConditioner;
     DSP::FuzzEngine fuzzEngine;
