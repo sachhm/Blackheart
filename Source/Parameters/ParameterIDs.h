@@ -16,6 +16,7 @@ inline constexpr auto octave1  { "octave1" };
 inline constexpr auto octave2  { "octave2" };
 inline constexpr auto mode     { "mode" };
 inline constexpr auto shape    { "shape" };
+inline constexpr auto panic    { "panic" };
 
 namespace Defaults
 {
@@ -23,13 +24,14 @@ namespace Defaults
     inline constexpr float glare   = 0.3f;
     inline constexpr float blend   = 0.7f;
     inline constexpr float level   = 0.7f;
-    inline constexpr float speed   = 2.0f;
+    inline constexpr float speed   = 0.3f;
     inline constexpr float chaos   = 0.5f;
     inline constexpr float rise    = 50.0f;
     inline constexpr bool  octave1 = false;
     inline constexpr bool  octave2 = false;
     inline constexpr float mode    = 1.0f;   // 0=Up(Screaming), 1=Center(Overdrive), 2=Down(Doom)
     inline constexpr float shape   = 0.5f;
+    inline constexpr float panic   = 0.0f;
 }
 
 namespace Ranges
@@ -54,10 +56,10 @@ namespace Ranges
     inline constexpr float levelStep = 0.01f;
     inline constexpr float levelSkew = 1.0f;
 
-    inline constexpr float speedMin  = 0.1f;
-    inline constexpr float speedMax  = 20.0f;
+    inline constexpr float speedMin  = 0.0f;
+    inline constexpr float speedMax  = 1.0f;
     inline constexpr float speedStep = 0.01f;
-    inline constexpr float speedSkew = 0.4f;
+    inline constexpr float speedSkew = 1.0f;
 
     inline constexpr float chaosMin  = 0.0f;
     inline constexpr float chaosMax  = 1.0f;
@@ -78,6 +80,11 @@ namespace Ranges
     inline constexpr float shapeMax  = 1.0f;
     inline constexpr float shapeStep = 0.01f;
     inline constexpr float shapeSkew = 1.0f;
+
+    inline constexpr float panicMin  = 0.0f;
+    inline constexpr float panicMax  = 1.0f;
+    inline constexpr float panicStep = 0.01f;
+    inline constexpr float panicSkew = 1.0f;
 }
 
 namespace Smoothing
@@ -91,6 +98,7 @@ namespace Smoothing
     inline constexpr double riseRampSec   = 0.01;   // Keep fast for pitch transitions
     inline constexpr double octaveRampSec = 0.008;  // Slightly slower for smoother octave transitions
     inline constexpr double shapeRampSec  = 0.02;   // Smooth shape transitions
+    inline constexpr double panicRampSec  = 0.02;
     // MODE has no smoothing — discrete switch, instant change
 }
 
@@ -107,6 +115,7 @@ namespace Labels
     inline const juce::String octave2 { "Octave +2" };
     inline const juce::String mode    { "Mode" };
     inline const juce::String shape   { "Shape" };
+    inline const juce::String panic   { "Panic" };
 }
 
 namespace Units
@@ -165,6 +174,11 @@ inline juce::NormalisableRange<float> modeRange()
 inline juce::NormalisableRange<float> shapeRange()
 {
     return makeRange(Ranges::shapeMin, Ranges::shapeMax, Ranges::shapeStep, Ranges::shapeSkew);
+}
+
+inline juce::NormalisableRange<float> panicRange()
+{
+    return makeRange(Ranges::panicMin, Ranges::panicMax, Ranges::panicStep, Ranges::panicSkew);
 }
 
 } // namespace ParameterIDs
