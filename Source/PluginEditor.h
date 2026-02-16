@@ -600,6 +600,14 @@ private:
     LabeledKnob blendKnob  { "BLEND", "%", "Dry/wet mix (0% = clean, 100% = full fuzz)" };
     LabeledKnob levelKnob  { "LEVEL", "%", "Output level of the fuzz block" };
 
+    // MODE switch (3-position)
+    juce::TextButton modeScreamButton { "SCRM" };
+    juce::TextButton modeODButton { "OD" };
+    juce::TextButton modeDoomButton { "DOOM" };
+
+    // SHAPE knob
+    LabeledKnob shapeKnob { "SHAPE", "%", "Active EQ sweep — tight to full destruction" };
+
     // Knobs - Chaos section
     LabeledKnob speedKnob  { "SPEED", "Hz", "Chaos modulation rate" };
     LabeledKnob chaosKnob  { "CHAOS", "%", "Modulation depth and randomness" };
@@ -633,9 +641,11 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> chaosAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> riseAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shapeAttachment;
 
     void setupKnobAttachments();
     void setupOctaveButtons();
+    void setupModeButtons();
     void updateVisualizers();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BlackheartAudioProcessorEditor)
