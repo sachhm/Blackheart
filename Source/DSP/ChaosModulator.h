@@ -78,7 +78,7 @@ private:
     float envelopeSensitivity = 1.0f;
     float envelopeThreshold = 0.05f;
 
-    static constexpr float defaultAttackMs = 10.0f;
+    static constexpr float defaultAttackMs = 3.0f;
     static constexpr float defaultReleaseMs = 100.0f;
 
     float currentSpeedHz = 2.0f;
@@ -91,6 +91,7 @@ private:
     float sampleAndHoldPhase = 0.0f;
     float sampleAndHoldSmoothed = 0.0f;
     static constexpr float sampleAndHoldSmoothCoeff = 0.995f;
+    float dynamicSHSmoothCoeff = sampleAndHoldSmoothCoeff;
 
     float randomWalkValue = 0.0f;
     float randomWalkTarget = 0.0f;

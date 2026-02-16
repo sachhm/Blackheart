@@ -186,8 +186,8 @@ void ChaosModulator::updateSampleAndHold()
         sampleAndHoldTarget = random.nextFloat() * 2.0f - 1.0f;
     }
 
-    sampleAndHoldSmoothed = sampleAndHoldSmoothed * sampleAndHoldSmoothCoeff +
-                           sampleAndHoldValue * (1.0f - sampleAndHoldSmoothCoeff);
+    sampleAndHoldSmoothed = sampleAndHoldSmoothed * dynamicSHSmoothCoeff +
+                           sampleAndHoldValue * (1.0f - dynamicSHSmoothCoeff);
 }
 
 void ChaosModulator::updateRandomWalk()
@@ -227,11 +227,13 @@ float ChaosModulator::getNextModulationValue()
     const float envelopeContribution = smoothedEnvelopeInfluence;
 
     // Reduced minimum chaos for more dynamic range (chaos responds more to playing intensity)
-    const float minChaosAtLowEnvelope = 0.05f;
+    const float minChaosAtLowEnvelope = 0.0f;
     effectiveChaosAmount = baseChaos * (minChaosAtLowEnvelope + envelopeContribution * (1.0f - minChaosAtLowEnvelope));
 
-    const float speedModulation = 1.0f + envelopeContribution * 0.5f;
-    const float effectiveSpeed = currentSpeedHz * speedModulation;
+    // Cross-modulation: at chaos > 0.7, envelope modulates LFO speed
+    const float crossModAmount = std::max(0.0f, (baseChaos - 0.7f) / 0.3f) * 3.0f;
+    const float speedCrossMod = 1.0f + envelopeContribution * (0.5f + crossModAmount);
+    const float effectiveSpeed = currentSpeedHz * speedCrossMod;
 
     lfoPhaseIncrement = effectiveSpeed / static_cast<float>(sampleRate);
 
@@ -241,8 +243,20 @@ float ChaosModulator::getNextModulationValue()
     if (!std::isfinite(lfoPhase))
         lfoPhase = 0.0f;
 
-    const float sampleAndHoldRate = effectiveSpeed * (0.5f + effectiveChaosAmount * 1.5f);
+    const float sampleAndHoldRate = effectiveSpeed * (0.5f + effectiveChaosAmount * effectiveChaosAmount * 3.0f);
     sampleAndHoldPhase += sampleAndHoldRate / static_cast<float>(sampleRate);
+
+    // S&H aggression: at chaos > 0.6, smoothing drops toward zero (raw jagged stepping)
+    if (baseChaos > 0.6f)
+    {
+        const float reduction = ((baseChaos - 0.6f) / 0.4f) * 0.95f;
+        dynamicSHSmoothCoeff = std::max(0.0f, 1.0f - reduction) * sampleAndHoldSmoothCoeff;
+    }
+    else
+    {
+        dynamicSHSmoothCoeff = sampleAndHoldSmoothCoeff;
+    }
+
     updateSampleAndHold();
 
     const float randomWalkRate = effectiveSpeed * 0.25f;
