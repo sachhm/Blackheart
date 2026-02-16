@@ -406,17 +406,17 @@ void PitchShifter::setChaosAmount(float normalizedChaos)
 
 void PitchShifter::setPitchModulation(float mod)
 {
-    pitchModulation = juce::jlimit(-1.0f, 1.0f, mod);
+    pitchModulation = std::isfinite(mod) ? juce::jlimit(-1.0f, 1.0f, mod) : 0.0f;
 }
 
 void PitchShifter::setGrainSizeModulation(float mod)
 {
-    grainSizeModulation = juce::jlimit(-1.0f, 1.0f, mod);
+    grainSizeModulation = std::isfinite(mod) ? juce::jlimit(-1.0f, 1.0f, mod) : 0.0f;
 }
 
 void PitchShifter::setTimingModulation(float mod)
 {
-    timingModulation = juce::jlimit(-1.0f, 1.0f, mod);
+    timingModulation = std::isfinite(mod) ? juce::jlimit(-1.0f, 1.0f, mod) : 0.0f;
 }
 
 } // namespace DSP

@@ -124,6 +124,12 @@ void ChaosModulator::updateEnvelopeSmoothing(float rawEnvelope)
                         : envelopeReleaseCoeff;
 
     smoothedEnvelopeInfluence += coeff * (curvedEnvelope - smoothedEnvelopeInfluence);
+
+    // Guard against NaN propagation from upstream envelope processing.
+    // Once NaN enters smoothedEnvelopeInfluence, it permanently corrupts
+    // all chaos modulation output.
+    if (!std::isfinite(smoothedEnvelopeInfluence))
+        smoothedEnvelopeInfluence = 0.0f;
 }
 
 float ChaosModulator::generateSineWave(float phase) const
@@ -232,6 +238,8 @@ float ChaosModulator::getNextModulationValue()
     lfoPhase += lfoPhaseIncrement;
     if (lfoPhase >= 1.0f)
         lfoPhase -= 1.0f;
+    if (!std::isfinite(lfoPhase))
+        lfoPhase = 0.0f;
 
     const float sampleAndHoldRate = effectiveSpeed * (0.5f + effectiveChaosAmount * 1.5f);
     sampleAndHoldPhase += sampleAndHoldRate / static_cast<float>(sampleRate);

@@ -80,6 +80,12 @@ float EnvelopeFollower::processRMS(float inputLevel)
     rmsBuffer[static_cast<size_t>(rmsIndex)] = squared;
     rmsSum += squared;
 
+    // Guard against floating-point drift in running sum.
+    // Accumulated rounding errors from subtract-add cycles can make rmsSum
+    // go slightly negative, causing std::sqrt to produce NaN.
+    if (rmsSum < 0.0f || !std::isfinite(rmsSum))
+        rmsSum = 0.0f;
+
     rmsIndex = (rmsIndex + 1) % rmsWindowSize;
 
     const float rmsValue = std::sqrt(rmsSum / static_cast<float>(rmsWindowSize));
