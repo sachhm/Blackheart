@@ -92,7 +92,8 @@ void BlendMixer::process(const juce::AudioBuffer<float>& dryBuffer,
 
 void BlendMixer::setBlend(float normalizedBlend)
 {
-    blend.setTargetValue(juce::jlimit(0.0f, 1.0f, normalizedBlend));
+    // V2 direction: 0 = full wet (Cathedral), 1 = full dry (clean)
+    blend.setTargetValue(juce::jlimit(0.0f, 1.0f, 1.0f - normalizedBlend));
 }
 
 } // namespace DSP
