@@ -56,6 +56,8 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     ringModFreq = 0.0f;
     ringModMix = 0.0f;
     panicAmount = 0.0f;
+    dryEnvelope = 0.0f;
+    wetEnvelope = 0.0f;
 
     prevOctaveOneActive = false;
     prevOctaveTwoActive = false;
@@ -95,6 +97,8 @@ void PitchShifter::reset()
     currentMix = 0.0f;
     feedbackSample = 0.0f;
     ringModPhase = 0.0f;
+    dryEnvelope = 0.0f;
+    wetEnvelope = 0.0f;
 
     prevOctaveOneActive = false;
     prevOctaveTwoActive = false;
@@ -372,10 +376,29 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 wetOutput = wetOutput * (1.0f - ringModMix) + wetOutput * ringModSine * ringModMix;
             }
 
-            const float wetLevel = std::abs(wetOutput);
-            const float dryLevel = std::abs(dryInput);
-            if (wetLevel < 0.0001f && dryLevel > 0.001f)
-                wetOutput = dryInput;
+            // Gain compensation: match wet level to dry level
+            {
+                const float dryAbs = std::abs(dryInput);
+                const float wetAbs = std::abs(wetOutput);
+
+                // Fast envelope followers for level tracking
+                const float dryCoeff = (dryAbs > dryEnvelope) ? envelopeAttack : envelopeRelease;
+                dryEnvelope += dryCoeff * (dryAbs - dryEnvelope);
+
+                const float wetCoeff = (wetAbs > wetEnvelope) ? envelopeAttack : envelopeRelease;
+                wetEnvelope += wetCoeff * (wetAbs - wetEnvelope);
+
+                // Apply makeup gain when wet is quieter than dry
+                if (wetEnvelope > 0.0001f && dryEnvelope > 0.0001f)
+                {
+                    const float gainComp = dryEnvelope / wetEnvelope;
+                    wetOutput *= juce::jlimit(0.5f, 4.0f, gainComp);
+                }
+                else if (wetAbs < 0.0001f && dryAbs > 0.001f)
+                {
+                    wetOutput = dryInput;
+                }
+            }
 
             const float outputSample = dryInput * (1.0f - effectiveMix) + wetOutput * effectiveMix;
             float finalOutput = outputSample;
