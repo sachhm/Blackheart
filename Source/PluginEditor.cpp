@@ -16,6 +16,12 @@ BlackheartAudioProcessorEditor::BlackheartAudioProcessorEditor(BlackheartAudioPr
     addAndMakeVisible(chaosKnob);
     addAndMakeVisible(riseKnob);
 
+    // Mode buttons and shape knob
+    addAndMakeVisible(modeScreamButton);
+    addAndMakeVisible(modeODButton);
+    addAndMakeVisible(modeDoomButton);
+    addAndMakeVisible(shapeKnob);
+
     // Add octave buttons and LEDs
     addAndMakeVisible(octave1Button);
     addAndMakeVisible(octave2Button);
@@ -60,6 +66,7 @@ BlackheartAudioProcessorEditor::BlackheartAudioProcessorEditor(BlackheartAudioPr
     // Setup attachments and buttons
     setupKnobAttachments();
     setupOctaveButtons();
+    setupModeButtons();
 
     // Connect oscilloscope to processor
     oscilloscope.setProcessor(&audioProcessor);
@@ -68,7 +75,7 @@ BlackheartAudioProcessorEditor::BlackheartAudioProcessorEditor(BlackheartAudioPr
     startTimerHz(30);
 
     // Set window size - wider to accommodate visualizers
-    setSize(620, 420);
+    setSize(620, 500);
 }
 
 BlackheartAudioProcessorEditor::~BlackheartAudioProcessorEditor()
@@ -102,6 +109,9 @@ void BlackheartAudioProcessorEditor::setupKnobAttachments()
     riseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, ParameterIDs::rise, riseKnob.getSlider());
 
+    shapeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, ParameterIDs::shape, shapeKnob.getSlider());
+
     // Update value labels after attachments are made
     gainKnob.updateValueLabel();
     glareKnob.updateValueLabel();
@@ -110,6 +120,7 @@ void BlackheartAudioProcessorEditor::setupKnobAttachments()
     speedKnob.updateValueLabel();
     chaosKnob.updateValueLabel();
     riseKnob.updateValueLabel();
+    shapeKnob.updateValueLabel();
 }
 
 void BlackheartAudioProcessorEditor::setupOctaveButtons()
@@ -126,6 +137,48 @@ void BlackheartAudioProcessorEditor::setupOctaveButtons()
         audioProcessor.setOctave2(isDown);
         octave2Button.setToggleState(isDown, juce::dontSendNotification);
     };
+}
+
+void BlackheartAudioProcessorEditor::setupModeButtons()
+{
+    auto updateModeButtons = [this]() {
+        int mode = audioProcessor.getMode();
+        modeScreamButton.setToggleState(mode == 0, juce::dontSendNotification);
+        modeODButton.setToggleState(mode == 1, juce::dontSendNotification);
+        modeDoomButton.setToggleState(mode == 2, juce::dontSendNotification);
+    };
+
+    modeScreamButton.setClickingTogglesState(false);
+    modeODButton.setClickingTogglesState(false);
+    modeDoomButton.setClickingTogglesState(false);
+
+    modeScreamButton.onClick = [this, updateModeButtons]() {
+        if (auto* param = audioProcessor.getAPVTS().getParameter(ParameterIDs::mode))
+            param->setValueNotifyingHost(0.0f);
+        updateModeButtons();
+    };
+    modeODButton.onClick = [this, updateModeButtons]() {
+        if (auto* param = audioProcessor.getAPVTS().getParameter(ParameterIDs::mode))
+            param->setValueNotifyingHost(0.5f);
+        updateModeButtons();
+    };
+    modeDoomButton.onClick = [this, updateModeButtons]() {
+        if (auto* param = audioProcessor.getAPVTS().getParameter(ParameterIDs::mode))
+            param->setValueNotifyingHost(1.0f);
+        updateModeButtons();
+    };
+
+    // Style buttons
+    for (auto* btn : { &modeScreamButton, &modeODButton, &modeDoomButton })
+    {
+        btn->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1e1e1e));
+        btn->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffcc3333));
+        btn->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff888888));
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    }
+
+    // Set initial state
+    updateModeButtons();
 }
 
 void BlackheartAudioProcessorEditor::updateVisualizers()
@@ -145,6 +198,12 @@ void BlackheartAudioProcessorEditor::updateVisualizers()
     bool oct2Active = audioProcessor.getOctave2();
     octave1LED.setOn(oct1Active);
     octave2LED.setOn(oct2Active);
+
+    // Sync mode button state
+    int mode = audioProcessor.getMode();
+    modeScreamButton.setToggleState(mode == 0, juce::dontSendNotification);
+    modeODButton.setToggleState(mode == 1, juce::dontSendNotification);
+    modeDoomButton.setToggleState(mode == 2, juce::dontSendNotification);
 
     // NOTE: Do NOT sync button toggle states here!
     // The MomentaryButton manages its own state via mouseDown/mouseUp.
@@ -204,15 +263,15 @@ void BlackheartAudioProcessorEditor::paint(juce::Graphics& g)
 
     // Vertical divider between fuzz and chaos
     const int dividerX = 290;
-    g.drawLine(static_cast<float>(dividerX), 50.0f, static_cast<float>(dividerX), 320.0f, 1.0f);
+    g.drawLine(static_cast<float>(dividerX), 50.0f, static_cast<float>(dividerX), 400.0f, 1.0f);
 
     // Horizontal divider above visualizers
-    g.drawLine(20.0f, 325.0f, static_cast<float>(getWidth() - 20), 325.0f, 1.0f);
+    g.drawLine(20.0f, 405.0f, static_cast<float>(getWidth() - 20), 405.0f, 1.0f);
 
     // Panel backgrounds
     g.setColour(juce::Colour(0x10ffffff));
-    g.fillRoundedRectangle(10.0f, 50.0f, 275.0f, 270.0f, 6.0f);  // Fuzz panel
-    g.fillRoundedRectangle(295.0f, 50.0f, 315.0f, 270.0f, 6.0f); // Chaos panel
+    g.fillRoundedRectangle(10.0f, 50.0f, 275.0f, 350.0f, 6.0f);  // Fuzz panel
+    g.fillRoundedRectangle(295.0f, 50.0f, 315.0f, 350.0f, 6.0f); // Chaos panel
 
     // Outer border
     g.setColour(juce::Colour(0xff2a2a2a));
@@ -245,23 +304,39 @@ void BlackheartAudioProcessorEditor::resized()
 
         // Section label
         fuzzSectionLabel.setBounds(area.removeFromTop(20));
-        area.removeFromTop(8);
+        area.removeFromTop(4);
 
-        // Knobs in 2x2 grid
         const int knobWidth = area.getWidth() / 2;
-        const int knobHeight = 95;
+        const int knobHeight = 85;
 
-        auto topRow = area.removeFromTop(knobHeight);
-        gainKnob.setBounds(topRow.removeFromLeft(knobWidth));
-        glareKnob.setBounds(topRow);
+        // Row 1: Gain, Glare
+        auto row1 = area.removeFromTop(knobHeight);
+        gainKnob.setBounds(row1.removeFromLeft(knobWidth));
+        glareKnob.setBounds(row1);
 
-        area.removeFromTop(8);
+        area.removeFromTop(4);
 
-        auto bottomRow = area.removeFromTop(knobHeight);
-        blendKnob.setBounds(bottomRow.removeFromLeft(knobWidth));
-        levelKnob.setBounds(bottomRow);
+        // Row 2: MODE switch (3 buttons in a row)
+        auto modeRow = area.removeFromTop(28);
+        modeRow = modeRow.reduced(10, 0);
+        const int modeBtnW = modeRow.getWidth() / 3;
+        modeScreamButton.setBounds(modeRow.removeFromLeft(modeBtnW).reduced(2, 0));
+        modeODButton.setBounds(modeRow.removeFromLeft(modeBtnW).reduced(2, 0));
+        modeDoomButton.setBounds(modeRow.reduced(2, 0));
+
+        area.removeFromTop(4);
+
+        // Row 3: Shape, Level
+        auto row3 = area.removeFromTop(knobHeight);
+        shapeKnob.setBounds(row3.removeFromLeft(knobWidth));
+        levelKnob.setBounds(row3);
+
+        area.removeFromTop(4);
+
+        // Row 4: Blend (centered)
+        auto row4 = area.removeFromTop(knobHeight);
+        blendKnob.setBounds(row4.withSizeKeepingCentre(knobWidth, knobHeight));
     }
-
     //==========================================================================
     // CHAOS SECTION
     //==========================================================================
