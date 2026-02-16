@@ -13,44 +13,49 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     if (sampleRate <= 0.0)
         sampleRate = 44100.0;
 
-    // Initialize lookup tables (thread-safe, only runs once)
     LookupTables::initialize();
 
     chaos.reset(sampleRate, 0.02);
+    panic.reset(sampleRate, 0.02);
 
-    // Calculate grain size in samples (30ms default)
     grainSizeSamples = static_cast<int>(defaultGrainMs * 0.001 * sampleRate);
     grainSizeSamples = juce::jlimit(256, delayBufferSize / 4, grainSizeSamples);
 
     setRiseTime(riseTimeMs);
 
-    // Clear delay buffer
     for (int ch = 0; ch < maxChannels; ++ch)
-    {
         for (int i = 0; i < delayBufferSize; ++i)
-        {
             delayBuffer[ch][i] = 0.0f;
-        }
-    }
 
     writePosition = 0;
 
-    // Initialize grains - staggered by half a grain for overlap
-    grains[0].readPosition = 0.0f;
-    grains[0].phase = 0.0f;
-    grains[0].active = true;
+    for (int g = 0; g < maxGrains; ++g)
+    {
+        grains[g].readPosition = static_cast<float>(grainSizeSamples * g / 2);
+        grains[g].phase = static_cast<float>(g) / static_cast<float>(maxGrains);
+        grains[g].active = (g < 2);
+    }
 
-    grains[1].readPosition = static_cast<float>(grainSizeSamples / 2);
-    grains[1].phase = 0.5f;
-    grains[1].active = true;
+    for (int g = 0; g < maxDetuneGrains; ++g)
+    {
+        detuneGrains[g].readPosition = static_cast<float>(grainSizeSamples * g / 2);
+        detuneGrains[g].phase = static_cast<float>(g) * 0.5f;
+        detuneGrains[g].active = false;
+    }
 
-    // Reset state
+    activeGrainCount = 2;
+
     transitionState = TransitionState::Idle;
     transitionActive = false;
     pitchSmoothState = 0.0f;
     mixSmoothState = 0.0f;
     currentPitchRatio = 1.0f;
     currentMix = 0.0f;
+    feedbackSample = 0.0f;
+    ringModPhase = 0.0f;
+    ringModFreq = 0.0f;
+    ringModMix = 0.0f;
+    panicAmount = 0.0f;
 
     prevOctaveOneActive = false;
     prevOctaveTwoActive = false;
@@ -61,22 +66,26 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
 void PitchShifter::reset()
 {
     for (int ch = 0; ch < maxChannels; ++ch)
-    {
         for (int i = 0; i < delayBufferSize; ++i)
-        {
             delayBuffer[ch][i] = 0.0f;
-        }
-    }
 
     writePosition = 0;
 
-    grains[0].readPosition = 0.0f;
-    grains[0].phase = 0.0f;
-    grains[0].active = true;
+    for (int g = 0; g < maxGrains; ++g)
+    {
+        grains[g].readPosition = static_cast<float>(grainSizeSamples * g / 2);
+        grains[g].phase = static_cast<float>(g) / static_cast<float>(maxGrains);
+        grains[g].active = (g < 2);
+    }
 
-    grains[1].readPosition = static_cast<float>(grainSizeSamples / 2);
-    grains[1].phase = 0.5f;
-    grains[1].active = true;
+    for (int g = 0; g < maxDetuneGrains; ++g)
+    {
+        detuneGrains[g].readPosition = 0.0f;
+        detuneGrains[g].phase = static_cast<float>(g) * 0.5f;
+        detuneGrains[g].active = false;
+    }
+
+    activeGrainCount = 2;
 
     transitionState = TransitionState::Idle;
     transitionActive = false;
@@ -84,15 +93,17 @@ void PitchShifter::reset()
     mixSmoothState = 0.0f;
     currentPitchRatio = 1.0f;
     currentMix = 0.0f;
+    feedbackSample = 0.0f;
+    ringModPhase = 0.0f;
 
     prevOctaveOneActive = false;
     prevOctaveTwoActive = false;
 }
 
-float PitchShifter::getGrainWindow(float phase) const
+float PitchShifter::getGrainWindow(float phase, float harshness) const
 {
-    // Use lookup table for Hann window - much faster than trig
-    return LookupTables::fastHann(phase);
+    const float hann = LookupTables::fastHann(phase);
+    return hann * (1.0f - harshness) + harshness;
 }
 
 float PitchShifter::readFromBuffer(int channel, float position) const
@@ -161,17 +172,21 @@ void PitchShifter::resetGrainsForTransition()
     const float bufSize = static_cast<float>(delayBufferSize);
     const float grainOffset = static_cast<float>(grainSizeSamples);
 
-    // Position grain 0 one full grain behind write position
-    // Start at phase 0.25 (Hann window = 0.5) for immediate contribution
-    grains[0].readPosition = static_cast<float>(writePosition) - grainOffset * 0.75f;
-    if (grains[0].readPosition < 0.0f) grains[0].readPosition += bufSize;
-    grains[0].phase = 0.25f;  // Start mid-rise for immediate contribution
+    for (int g = 0; g < activeGrainCount; ++g)
+    {
+        grains[g].readPosition = static_cast<float>(writePosition) - grainOffset * (1.0f - static_cast<float>(g) / static_cast<float>(activeGrainCount));
+        if (grains[g].readPosition < 0.0f) grains[g].readPosition += bufSize;
+        grains[g].phase = static_cast<float>(g) / static_cast<float>(activeGrainCount);
+        grains[g].active = true;
+    }
 
-    // Position grain 1 half a grain behind (50% overlap from grain 0)
-    // Start at phase 0.75 (Hann window = 0.5) for immediate contribution
-    grains[1].readPosition = static_cast<float>(writePosition) - grainOffset * 0.25f;
-    if (grains[1].readPosition < 0.0f) grains[1].readPosition += bufSize;
-    grains[1].phase = 0.75f;  // Start mid-fall for immediate contribution
+    for (int g = 0; g < maxDetuneGrains; ++g)
+    {
+        detuneGrains[g].readPosition = static_cast<float>(writePosition) - grainOffset * 0.5f;
+        if (detuneGrains[g].readPosition < 0.0f) detuneGrains[g].readPosition += bufSize;
+        detuneGrains[g].phase = static_cast<float>(g) * 0.5f;
+        detuneGrains[g].active = true;
+    }
 }
 
 void PitchShifter::process(juce::AudioBuffer<float>& buffer)
@@ -184,22 +199,18 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
 
     const int processChannels = std::min(numChannels, maxChannels);
 
-    // Load atomic octave states once per block for consistency
     const bool oct1Active = octaveOneActive.load(std::memory_order_relaxed);
     const bool oct2Active = octaveTwoActive.load(std::memory_order_relaxed);
     const bool anyOctaveActive = oct1Active || oct2Active;
 
-    // Target pitch ratio: 2.0 for +1 octave (2x freq), 4.0 for +2 octaves (4x freq)
-    float targetPitchRatio = 1.0f;  // 1.0 = no pitch change
+    float targetPitchRatio = 1.0f;
     if (oct2Active)
-        targetPitchRatio = 4.0f;    // +2 octaves
+        targetPitchRatio = 4.0f;
     else if (oct1Active)
-        targetPitchRatio = 2.0f;    // +1 octave
+        targetPitchRatio = 2.0f;
 
-    // Target mix: 1.0 when octave active, 0.0 when not
     const float targetMix = anyOctaveActive ? 1.0f : 0.0f;
 
-    // Check for state change to reset grains
     const bool wasActive = prevOctaveOneActive || prevOctaveTwoActive;
     const bool stateChanged = (wasActive != anyOctaveActive) ||
                               (anyOctaveActive && (prevOctaveOneActive != oct1Active ||
@@ -214,63 +225,81 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
     prevOctaveOneActive = oct1Active;
     prevOctaveTwoActive = oct2Active;
 
-    // Get safe smoothing coefficients
     const float safeRiseCoeff = (riseCoeff > 0.0f && std::isfinite(riseCoeff)) ? riseCoeff : 0.002f;
     const float safeFallCoeff = (fallCoeff > 0.0f && std::isfinite(fallCoeff)) ? fallCoeff : 0.002f;
 
-    // Process sample by sample
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        // STEP 1: Write input to delay buffer
+        const float chaosVal = chaos.getNextValue();
+        const float panicVal = panic.getNextValue();
+
+        // Update active grain count based on chaos
+        int targetGrainCount;
+        if (chaosVal < 0.3f)
+            targetGrainCount = 2;
+        else if (chaosVal < 0.7f)
+            targetGrainCount = 3;
+        else
+            targetGrainCount = 4;
+
+        if (targetGrainCount > activeGrainCount)
+        {
+            grains[activeGrainCount].phase = 0.0f;
+            grains[activeGrainCount].readPosition = static_cast<float>(writePosition) - static_cast<float>(grainSizeSamples);
+            if (grains[activeGrainCount].readPosition < 0.0f)
+                grains[activeGrainCount].readPosition += static_cast<float>(delayBufferSize);
+            grains[activeGrainCount].active = true;
+            activeGrainCount = targetGrainCount;
+        }
+        else if (targetGrainCount < activeGrainCount)
+        {
+            const float lastGrainPhase = grains[activeGrainCount - 1].phase;
+            if (lastGrainPhase < 0.05f || lastGrainPhase > 0.95f)
+            {
+                grains[activeGrainCount - 1].active = false;
+                activeGrainCount = targetGrainCount;
+            }
+        }
+
+        // Write input to delay buffer with feedback
         for (int ch = 0; ch < processChannels; ++ch)
         {
             float inputSample = buffer.getSample(ch, sample);
             if (!std::isfinite(inputSample)) inputSample = 0.0f;
-            delayBuffer[ch][writePosition] = inputSample;
+
+            const float feedbackAmount = chaosVal * 0.4f;
+            const float feedbackInput = inputSample + std::tanh(feedbackSample * feedbackAmount) * feedbackAmount;
+            delayBuffer[ch][writePosition] = feedbackInput;
         }
 
-        // STEP 2: If not processing, pass through
         const bool needsProcessing = anyOctaveActive || mixSmoothState > 0.0001f;
 
         if (!needsProcessing)
         {
-            // Just pass through - input already in buffer
             writePosition = (writePosition + 1) % delayBufferSize;
             continue;
         }
 
-        // STEP 3: Smooth parameters
         const float smoothCoeff = (targetMix > mixSmoothState) ? safeRiseCoeff : safeFallCoeff;
-
-        // Smooth pitch ratio directly (not an intermediate value)
         currentPitchRatio += smoothCoeff * (targetPitchRatio - currentPitchRatio);
         mixSmoothState += smoothCoeff * (targetMix - mixSmoothState);
-
         currentPitchRatio = juce::jlimit(1.0f, 8.0f, currentPitchRatio);
         mixSmoothState = juce::jlimit(0.0f, 1.0f, mixSmoothState);
 
-        // Calculate effective mix with smooth curve
-        // Use squared curve for smooth fade-in, but ensure we reach 1.0
         float effectiveMix;
         if (mixSmoothState < 0.5f)
-        {
-            // Quadratic curve for smooth start: 0->0, 0.5->0.5
             effectiveMix = 2.0f * mixSmoothState * mixSmoothState;
-        }
         else
         {
-            // Inverse quadratic for smooth approach to 1.0: 0.5->0.5, 1.0->1.0
             const float t = mixSmoothState - 0.5f;
             effectiveMix = 0.5f + 2.0f * t * (1.0f - t) + t * t * 2.0f;
         }
-
         effectiveMix = juce::jlimit(0.0f, 1.0f, effectiveMix);
 
-        // STEP 4: Apply chaos modulation
-        const float chaosVal = chaos.getNextValue();
-        const float pitchMod = pitchModulation * chaosVal * 0.1f;
-        const float sizeMod = grainSizeModulation * chaosVal * 0.3f;
-        const float timeMod = timingModulation * chaosVal * 4.0f;
+        // Wider modulation ranges
+        const float pitchMod = pitchModulation * chaosVal * 0.4f;
+        const float sizeMod = grainSizeModulation * chaosVal * 0.6f;
+        const float timeMod = timingModulation * chaosVal * 12.0f;
 
         float modulatedPitch = currentPitchRatio * (1.0f + pitchMod);
         modulatedPitch = juce::jlimit(0.5f, 8.0f, modulatedPitch);
@@ -278,84 +307,112 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
         int modulatedGrainSize = static_cast<int>(static_cast<float>(grainSizeSamples) * (1.0f + sizeMod));
         modulatedGrainSize = juce::jlimit(256, delayBufferSize / 4, modulatedGrainSize);
 
-        // STEP 5: Process each channel
+        // Window harshness: chaos^2 — stays clean until pushed hard
+        const float harshness = chaosVal * chaosVal;
+
+        // Detune ratios for PANIC grains
+        const float detuneUp = 1.0f + panicVal * 0.15f;
+        const float detuneDown = 1.0f - panicVal * 0.15f;
+        const float detuneDrift = pitchModulation * chaosVal * 0.05f;
+
+        float wetSumMono = 0.0f;
+
         for (int ch = 0; ch < processChannels; ++ch)
         {
             const float dryInput = buffer.getSample(ch, sample);
 
-            // Read from overlapping grains
             float wetSum = 0.0f;
             float windowSum = 0.0f;
 
-            for (int g = 0; g < numGrains; ++g)
+            for (int g = 0; g < activeGrainCount; ++g)
             {
-                const Grain& grain = grains[g];
-                const float window = getGrainWindow(grain.phase);
+                if (!grains[g].active) continue;
+                const float window = getGrainWindow(grains[g].phase, harshness);
+                float readPos = grains[g].readPosition;
+                readPos += (g % 2 == 0) ? timeMod : -timeMod;
 
-                // Calculate read position with timing modulation
-                float readPos = grain.readPosition;
-                readPos += (g == 0) ? timeMod : -timeMod;
-
-                // Wrap position
                 const float bufSize = static_cast<float>(delayBufferSize);
                 while (readPos < 0.0f) readPos += bufSize;
                 while (readPos >= bufSize) readPos -= bufSize;
 
-                // Read from delay buffer
-                const float grainSample = readFromBuffer(ch, readPos);
-
-                // Accumulate with window
-                wetSum += grainSample * window;
+                wetSum += readFromBuffer(ch, readPos) * window;
                 windowSum += window;
             }
 
-            // Normalize by window sum (Hann windows with 50% overlap sum to ~1.0)
+            // PANIC detune grains
+            if (panicVal > 0.001f)
+            {
+                for (int g = 0; g < maxDetuneGrains; ++g)
+                {
+                    const float window = getGrainWindow(detuneGrains[g].phase, harshness);
+                    float readPos = detuneGrains[g].readPosition;
+
+                    const float bufSize = static_cast<float>(delayBufferSize);
+                    while (readPos < 0.0f) readPos += bufSize;
+                    while (readPos >= bufSize) readPos -= bufSize;
+
+                    wetSum += readFromBuffer(ch, readPos) * window * panicVal;
+                    windowSum += window * panicVal;
+                }
+            }
+
             float wetOutput;
             if (windowSum > 0.001f)
                 wetOutput = wetSum / windowSum;
             else
-                wetOutput = dryInput;  // Fallback to dry if windows are zero
+                wetOutput = dryInput;
 
-            // Safety checks to prevent silence
             if (!std::isfinite(wetOutput))
                 wetOutput = dryInput;
 
-            // If wet signal is suspiciously silent but dry isn't, blend in dry
-            // This prevents complete silence during problematic transitions
+            // Ring modulation (post-grain, pre-mix)
+            if (ringModMix > 0.001f)
+            {
+                const float ringModSine = std::sin(ringModPhase * juce::MathConstants<float>::twoPi);
+                wetOutput = wetOutput * (1.0f - ringModMix) + wetOutput * ringModSine * ringModMix;
+            }
+
             const float wetLevel = std::abs(wetOutput);
             const float dryLevel = std::abs(dryInput);
             if (wetLevel < 0.0001f && dryLevel > 0.001f)
-            {
-                // Wet is silent but dry has signal - use dry to prevent silence
                 wetOutput = dryInput;
-            }
 
-            // Mix dry and wet
-            // When effectiveMix = 0, output = dry
-            // When effectiveMix = 1, output = wet (pitch shifted)
             const float outputSample = dryInput * (1.0f - effectiveMix) + wetOutput * effectiveMix;
-
-            // Write to output - ensure we never output silence when there's input
             float finalOutput = outputSample;
             if (!std::isfinite(finalOutput))
                 finalOutput = dryInput;
 
             buffer.setSample(ch, sample, finalOutput);
+            wetSumMono += wetOutput;
         }
 
-        // STEP 6: Update grain positions for next sample
-        for (int g = 0; g < numGrains; ++g)
+        // Store feedback sample (mono average, tanh-clamped)
+        feedbackSample = std::tanh(wetSumMono / static_cast<float>(processChannels));
+
+        // Update main grain positions
+        for (int g = 0; g < activeGrainCount; ++g)
         {
-            updateGrain(grains[g], modulatedPitch, modulatedGrainSize);
+            if (grains[g].active)
+                updateGrain(grains[g], modulatedPitch, modulatedGrainSize);
         }
 
-        // STEP 7: Advance write position
-        writePosition = (writePosition + 1) % delayBufferSize;
+        // Update detune grain positions
+        if (panicVal > 0.001f)
+        {
+            updateGrain(detuneGrains[0], modulatedPitch * (detuneUp + detuneDrift), modulatedGrainSize);
+            updateGrain(detuneGrains[1], modulatedPitch * (detuneDown - detuneDrift), modulatedGrainSize);
+        }
 
-        // Track current mix for state
+        // Advance ring mod oscillator
+        if (ringModFreq > 0.0f)
+        {
+            ringModPhase += ringModFreq / static_cast<float>(sampleRate);
+            if (ringModPhase >= 1.0f) ringModPhase -= 1.0f;
+        }
+
+        writePosition = (writePosition + 1) % delayBufferSize;
         currentMix = effectiveMix;
 
-        // Check if transition complete
         if (transitionActive && std::abs(targetMix - mixSmoothState) < 0.001f)
         {
             transitionActive = false;
@@ -363,6 +420,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             {
                 mixSmoothState = 0.0f;
                 currentPitchRatio = 1.0f;
+                feedbackSample = 0.0f;
             }
         }
     }
@@ -421,7 +479,21 @@ void PitchShifter::setTimingModulation(float mod)
 
 void PitchShifter::setPanic(float normalizedPanic)
 {
-    juce::ignoreUnused(normalizedPanic);
+    panic.setTargetValue(juce::jlimit(0.0f, 1.0f, normalizedPanic));
+}
+
+void PitchShifter::setRingModSpeed(float normalizedSpeed)
+{
+    ringModMix = juce::jlimit(0.0f, 1.0f, (normalizedSpeed - 0.5f) * 2.0f);
+    if (ringModMix > 0.001f)
+    {
+        const float t = (normalizedSpeed - 0.5f) * 2.0f;
+        ringModFreq = 20.0f * std::pow(100.0f, t);
+    }
+    else
+    {
+        ringModFreq = 0.0f;
+    }
 }
 
 } // namespace DSP
