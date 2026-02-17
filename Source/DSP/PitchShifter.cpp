@@ -18,8 +18,8 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     chaos.reset(sampleRate, 0.02);
     panic.reset(sampleRate, 0.02);
 
-    grainSizeSamples = static_cast<int>(defaultGrainMs * 0.001 * sampleRate);
-    grainSizeSamples = juce::jlimit(256, delayBufferSize / 4, grainSizeSamples);
+    windowSizeSamples = static_cast<int>(defaultWindowMs * 0.001 * sampleRate);
+    windowSizeSamples = juce::jlimit(256, delayBufferSize / 4, windowSizeSamples);
 
     setRiseTime(riseTimeMs);
 
@@ -29,25 +29,17 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
 
     writePosition = 0;
 
-    for (int g = 0; g < maxGrains; ++g)
-    {
-        grains[g].readPosition = static_cast<float>(grainSizeSamples * g / 2);
-        grains[g].phase = static_cast<float>(g) / static_cast<float>(maxGrains);
-        grains[g].active = (g < 2);
-    }
+    // Initialize heads 180° out of phase
+    mainHeads[0].readPosition = 0.0f;
+    mainHeads[0].ramp = 0.0f;
+    mainHeads[1].readPosition = 0.0f;
+    mainHeads[1].ramp = 0.5f;
 
-    for (int g = 0; g < maxDetuneGrains; ++g)
-    {
-        detuneGrains[g].readPosition = static_cast<float>(grainSizeSamples * g / 2);
-        detuneGrains[g].phase = static_cast<float>(g) * 0.5f;
-        detuneGrains[g].active = false;
-    }
+    detuneHeads[0].readPosition = 0.0f;
+    detuneHeads[0].ramp = 0.0f;
+    detuneHeads[1].readPosition = 0.0f;
+    detuneHeads[1].ramp = 0.5f;
 
-    activeGrainCount = 2;
-
-    transitionState = TransitionState::Idle;
-    transitionActive = false;
-    pitchSmoothState = 0.0f;
     mixSmoothState = 0.0f;
     currentPitchRatio = 1.0f;
     currentMix = 0.0f;
@@ -58,6 +50,7 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     panicAmount = 0.0f;
     dryEnvelope = 0.0f;
     wetEnvelope = 0.0f;
+    transitionActive = false;
 
     prevOctaveOneActive = false;
     prevOctaveTwoActive = false;
@@ -73,25 +66,11 @@ void PitchShifter::reset()
 
     writePosition = 0;
 
-    for (int g = 0; g < maxGrains; ++g)
-    {
-        grains[g].readPosition = static_cast<float>(grainSizeSamples * g / 2);
-        grains[g].phase = static_cast<float>(g) / static_cast<float>(maxGrains);
-        grains[g].active = (g < 2);
-    }
+    mainHeads[0] = { 0.0f, 0.0f };
+    mainHeads[1] = { 0.0f, 0.5f };
+    detuneHeads[0] = { 0.0f, 0.0f };
+    detuneHeads[1] = { 0.0f, 0.5f };
 
-    for (int g = 0; g < maxDetuneGrains; ++g)
-    {
-        detuneGrains[g].readPosition = 0.0f;
-        detuneGrains[g].phase = static_cast<float>(g) * 0.5f;
-        detuneGrains[g].active = false;
-    }
-
-    activeGrainCount = 2;
-
-    transitionState = TransitionState::Idle;
-    transitionActive = false;
-    pitchSmoothState = 0.0f;
     mixSmoothState = 0.0f;
     currentPitchRatio = 1.0f;
     currentMix = 0.0f;
@@ -99,15 +78,10 @@ void PitchShifter::reset()
     ringModPhase = 0.0f;
     dryEnvelope = 0.0f;
     wetEnvelope = 0.0f;
+    transitionActive = false;
 
     prevOctaveOneActive = false;
     prevOctaveTwoActive = false;
-}
-
-float PitchShifter::getGrainWindow(float phase, float harshness) const
-{
-    const float hann = LookupTables::fastHann(phase);
-    return hann * (1.0f - harshness) + harshness;
 }
 
 float PitchShifter::readFromBuffer(int channel, float position) const
@@ -122,75 +96,43 @@ float PitchShifter::readFromBuffer(int channel, float position) const
     if (!std::isfinite(position))
         return 0.0f;
 
-    // Linear interpolation
+    // 4-point Hermite cubic interpolation
     const int idx0 = static_cast<int>(position);
+    const int idxM1 = (idx0 - 1 + delayBufferSize) % delayBufferSize;
     const int idx1 = (idx0 + 1) % delayBufferSize;
+    const int idx2 = (idx0 + 2) % delayBufferSize;
     const float frac = position - static_cast<float>(idx0);
 
-    const float s0 = delayBuffer[channel][idx0];
-    const float s1 = delayBuffer[channel][idx1];
+    const float y0 = delayBuffer[channel][idxM1];
+    const float y1 = delayBuffer[channel][idx0];
+    const float y2 = delayBuffer[channel][idx1];
+    const float y3 = delayBuffer[channel][idx2];
 
-    return s0 + frac * (s1 - s0);
+    const float c0 = y1;
+    const float c1 = 0.5f * (y2 - y0);
+    const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+    const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+
+    return ((c3 * frac + c2) * frac + c1) * frac + c0;
 }
 
-void PitchShifter::updateGrain(Grain& grain, float pitchRatio, int grainSize)
-{
-    grainSize = juce::jlimit(256, delayBufferSize / 4, grainSize);
-    pitchRatio = juce::jlimit(0.5f, 8.0f, pitchRatio);
-
-    // Advance phase
-    const float phaseInc = 1.0f / static_cast<float>(grainSize);
-    grain.phase += phaseInc;
-
-    // When grain completes, reset it
-    if (grain.phase >= 1.0f)
-    {
-        grain.phase -= 1.0f;
-        // Reset read position to trail behind write position
-        grain.readPosition = static_cast<float>(writePosition) - static_cast<float>(grainSize);
-        if (grain.readPosition < 0.0f)
-            grain.readPosition += static_cast<float>(delayBufferSize);
-    }
-
-    // Advance read position by pitch ratio
-    // pitchRatio > 1 = read faster = higher pitch
-    grain.readPosition += pitchRatio;
-
-    // Wrap
-    const float bufSize = static_cast<float>(delayBufferSize);
-    while (grain.readPosition >= bufSize) grain.readPosition -= bufSize;
-    while (grain.readPosition < 0.0f) grain.readPosition += bufSize;
-}
-
-float PitchShifter::applyExpCurve(float linearValue, bool isAttack) const
-{
-    linearValue = juce::jlimit(0.0f, 1.0f, linearValue);
-    if (isAttack)
-        return 1.0f - std::exp(-linearValue * expCurveAmount);
-    else
-        return std::exp(-linearValue * expCurveAmount);
-}
-
-void PitchShifter::resetGrainsForTransition()
+void PitchShifter::resetHeadsForTransition()
 {
     const float bufSize = static_cast<float>(delayBufferSize);
-    const float grainOffset = static_cast<float>(grainSizeSamples);
+    const float startPos = static_cast<float>(writePosition) - static_cast<float>(windowSizeSamples);
 
-    for (int g = 0; g < activeGrainCount; ++g)
-    {
-        grains[g].readPosition = static_cast<float>(writePosition) - grainOffset * (1.0f - static_cast<float>(g) / static_cast<float>(activeGrainCount));
-        if (grains[g].readPosition < 0.0f) grains[g].readPosition += bufSize;
-        grains[g].phase = static_cast<float>(g) / static_cast<float>(activeGrainCount);
-        grains[g].active = true;
-    }
+    float pos = startPos;
+    if (pos < 0.0f) pos += bufSize;
 
-    for (int g = 0; g < maxDetuneGrains; ++g)
-    {
-        detuneGrains[g].readPosition = static_cast<float>(writePosition) - grainOffset * 0.5f;
-        if (detuneGrains[g].readPosition < 0.0f) detuneGrains[g].readPosition += bufSize;
-        detuneGrains[g].phase = static_cast<float>(g) * 0.5f;
-        detuneGrains[g].active = true;
-    }
+    mainHeads[0].readPosition = pos;
+    mainHeads[0].ramp = 0.0f;
+    mainHeads[1].readPosition = pos;
+    mainHeads[1].ramp = 0.5f;
+
+    detuneHeads[0].readPosition = pos;
+    detuneHeads[0].ramp = 0.25f;
+    detuneHeads[1].readPosition = pos;
+    detuneHeads[1].ramp = 0.75f;
 }
 
 void PitchShifter::process(juce::AudioBuffer<float>& buffer)
@@ -222,7 +164,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
 
     if (stateChanged && anyOctaveActive)
     {
-        resetGrainsForTransition();
+        resetHeadsForTransition();
         transitionActive = true;
     }
 
@@ -232,38 +174,12 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
     const float safeRiseCoeff = (riseCoeff > 0.0f && std::isfinite(riseCoeff)) ? riseCoeff : 0.002f;
     const float safeFallCoeff = (fallCoeff > 0.0f && std::isfinite(fallCoeff)) ? fallCoeff : 0.002f;
 
+    const float bufSize = static_cast<float>(delayBufferSize);
+
     for (int sample = 0; sample < numSamples; ++sample)
     {
         const float chaosVal = chaos.getNextValue();
         const float panicVal = panic.getNextValue();
-
-        // Update active grain count based on chaos
-        int targetGrainCount;
-        if (chaosVal < 0.3f)
-            targetGrainCount = 2;
-        else if (chaosVal < 0.7f)
-            targetGrainCount = 3;
-        else
-            targetGrainCount = 4;
-
-        if (targetGrainCount > activeGrainCount)
-        {
-            grains[activeGrainCount].phase = 0.0f;
-            grains[activeGrainCount].readPosition = static_cast<float>(writePosition) - static_cast<float>(grainSizeSamples);
-            if (grains[activeGrainCount].readPosition < 0.0f)
-                grains[activeGrainCount].readPosition += static_cast<float>(delayBufferSize);
-            grains[activeGrainCount].active = true;
-            activeGrainCount = targetGrainCount;
-        }
-        else if (targetGrainCount < activeGrainCount)
-        {
-            const float lastGrainPhase = grains[activeGrainCount - 1].phase;
-            if (lastGrainPhase < 0.05f || lastGrainPhase > 0.95f)
-            {
-                grains[activeGrainCount - 1].active = false;
-                activeGrainCount = targetGrainCount;
-            }
-        }
 
         // Write input to delay buffer with feedback
         for (int ch = 0; ch < processChannels; ++ch)
@@ -284,92 +200,99 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             continue;
         }
 
+        // Smooth pitch ratio and mix
         const float smoothCoeff = (targetMix > mixSmoothState) ? safeRiseCoeff : safeFallCoeff;
         currentPitchRatio += smoothCoeff * (targetPitchRatio - currentPitchRatio);
         mixSmoothState += smoothCoeff * (targetMix - mixSmoothState);
         currentPitchRatio = juce::jlimit(1.0f, 8.0f, currentPitchRatio);
         mixSmoothState = juce::jlimit(0.0f, 1.0f, mixSmoothState);
 
-        float effectiveMix;
-        if (mixSmoothState < 0.5f)
-            effectiveMix = 2.0f * mixSmoothState * mixSmoothState;
-        else
-        {
-            const float t = mixSmoothState - 0.5f;
-            effectiveMix = 0.5f + 2.0f * t * (1.0f - t) + t * t * 2.0f;
-        }
-        effectiveMix = juce::jlimit(0.0f, 1.0f, effectiveMix);
+        // Smoothstep S-curve for mix
+        const float mx = mixSmoothState;
+        const float effectiveMix = mx * mx * (3.0f - 2.0f * mx);
 
-        // Wider modulation ranges
+        // Apply chaos modulation to pitch ratio
         const float pitchMod = pitchModulation * chaosVal * 0.4f;
-        const float sizeMod = grainSizeModulation * chaosVal * 0.6f;
-        const float timeMod = timingModulation * chaosVal * 12.0f;
-
         float modulatedPitch = currentPitchRatio * (1.0f + pitchMod);
         modulatedPitch = juce::jlimit(0.5f, 8.0f, modulatedPitch);
 
-        int modulatedGrainSize = static_cast<int>(static_cast<float>(grainSizeSamples) * (1.0f + sizeMod));
-        modulatedGrainSize = juce::jlimit(256, delayBufferSize / 4, modulatedGrainSize);
+        // Chaos modulates window size: 30ms at chaos=0, down to 10ms at chaos=1
+        const float windowMod = grainSizeModulation * chaosVal * 0.6f;
+        const float chaosWindowMs = defaultWindowMs - chaosVal * (defaultWindowMs - minWindowMs);
+        int modWindowSize = static_cast<int>(chaosWindowMs * 0.001f * static_cast<float>(sampleRate) * (1.0f + windowMod));
+        modWindowSize = juce::jlimit(256, delayBufferSize / 4, modWindowSize);
 
-        // Window harshness: chaos^2 — stays clean until pushed hard
+        // Crossfade harshness: at high chaos, crossfade becomes sharper
+        // harshness 0 = smooth cosine, 1 = nearly rectangular (hard glitch)
         const float harshness = chaosVal * chaosVal;
 
-        // Detune ratios for PANIC grains
+        // Timing jitter for reset position (chaos-driven)
+        const float resetJitter = timingModulation * chaosVal * static_cast<float>(modWindowSize) * 0.3f;
+
+        // Ramp increment: how fast each head sweeps through its window
+        // At pitchRatio=2, read advances 2x faster than write, so the head
+        // pulls ahead by (pitchRatio-1) samples per sample
+        const float rampInc = (modulatedPitch - 1.0f) / static_cast<float>(modWindowSize);
+
+        // Detune ratios for PANIC
         const float detuneUp = 1.0f + panicVal * 0.15f;
         const float detuneDown = 1.0f - panicVal * 0.15f;
-        const float detuneDrift = pitchModulation * chaosVal * 0.05f;
 
         float wetSumMono = 0.0f;
 
         for (int ch = 0; ch < processChannels; ++ch)
         {
             const float dryInput = buffer.getSample(ch, sample);
-
             float wetSum = 0.0f;
-            float windowSum = 0.0f;
 
-            for (int g = 0; g < activeGrainCount; ++g)
+            // Process main heads
+            for (int h = 0; h < numMainHeads; ++h)
             {
-                if (!grains[g].active) continue;
-                const float window = getGrainWindow(grains[g].phase, harshness);
-                float readPos = grains[g].readPosition;
-                readPos += (g % 2 == 0) ? timeMod : -timeMod;
+                // Compute crossfade gain from ramp position
+                // Hann-like envelope: gain = 0.5 - 0.5 * cos(2*PI*ramp)
+                float gain;
+                const float ramp = mainHeads[h].ramp;
+                if (harshness < 0.001f)
+                {
+                    // Pure cosine crossfade
+                    gain = 0.5f - 0.5f * LookupTables::fastCos(ramp);
+                }
+                else
+                {
+                    // Blend between cosine and rectangular based on harshness
+                    const float cosGain = 0.5f - 0.5f * LookupTables::fastCos(ramp);
+                    // Rectangular: 1.0 in middle, 0.0 at edges
+                    const float edgeFade = 0.05f * (1.0f - harshness) + 0.001f;
+                    float rectGain = 1.0f;
+                    if (ramp < edgeFade)
+                        rectGain = ramp / edgeFade;
+                    else if (ramp > 1.0f - edgeFade)
+                        rectGain = (1.0f - ramp) / edgeFade;
+                    gain = cosGain * (1.0f - harshness) + rectGain * harshness;
+                }
 
-                const float bufSize = static_cast<float>(delayBufferSize);
-                while (readPos < 0.0f) readPos += bufSize;
-                while (readPos >= bufSize) readPos -= bufSize;
-
-                wetSum += readFromBuffer(ch, readPos) * window;
-                windowSum += window;
+                wetSum += readFromBuffer(ch, mainHeads[h].readPosition) * gain;
             }
 
-            // PANIC detune grains
+            // PANIC detuned heads
             if (panicVal > 0.001f)
             {
-                for (int g = 0; g < maxDetuneGrains; ++g)
+                for (int h = 0; h < numDetuneHeads; ++h)
                 {
-                    const float window = getGrainWindow(detuneGrains[g].phase, harshness);
-                    float readPos = detuneGrains[g].readPosition;
-
-                    const float bufSize = static_cast<float>(delayBufferSize);
-                    while (readPos < 0.0f) readPos += bufSize;
-                    while (readPos >= bufSize) readPos -= bufSize;
-
-                    wetSum += readFromBuffer(ch, readPos) * window * panicVal;
-                    windowSum += window * panicVal;
+                    const float ramp = detuneHeads[h].ramp;
+                    const float gain = 0.5f - 0.5f * LookupTables::fastCos(ramp);
+                    wetSum += readFromBuffer(ch, detuneHeads[h].readPosition) * gain * panicVal;
                 }
             }
 
-            float wetOutput;
-            if (windowSum > 0.001f)
-                wetOutput = wetSum / windowSum;
-            else
-                wetOutput = dryInput;
+            // Normalize: main heads sum to ~1.0 with cosine crossfade (two 180° offset Hann = constant)
+            // PANIC adds on top, scaled by panicVal
+            float wetOutput = wetSum;
 
             if (!std::isfinite(wetOutput))
                 wetOutput = dryInput;
 
-            // Ring modulation (post-grain, pre-mix)
+            // Ring modulation (post-pitch, pre-mix)
             if (ringModMix > 0.001f)
             {
                 const float ringModSine = std::sin(ringModPhase * juce::MathConstants<float>::twoPi);
@@ -381,14 +304,12 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 const float dryAbs = std::abs(dryInput);
                 const float wetAbs = std::abs(wetOutput);
 
-                // Fast envelope followers for level tracking
                 const float dryCoeff = (dryAbs > dryEnvelope) ? envelopeAttack : envelopeRelease;
                 dryEnvelope += dryCoeff * (dryAbs - dryEnvelope);
 
                 const float wetCoeff = (wetAbs > wetEnvelope) ? envelopeAttack : envelopeRelease;
                 wetEnvelope += wetCoeff * (wetAbs - wetEnvelope);
 
-                // Apply makeup gain when wet is quieter than dry
                 if (wetEnvelope > 0.0001f && dryEnvelope > 0.0001f)
                 {
                     const float gainComp = dryEnvelope / wetEnvelope;
@@ -409,21 +330,62 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             wetSumMono += wetOutput;
         }
 
-        // Store feedback sample (mono average, tanh-clamped)
+        // Store feedback sample
         feedbackSample = std::tanh(wetSumMono / static_cast<float>(processChannels));
 
-        // Update main grain positions
-        for (int g = 0; g < activeGrainCount; ++g)
+        // Advance main heads
+        for (int h = 0; h < numMainHeads; ++h)
         {
-            if (grains[g].active)
-                updateGrain(grains[g], modulatedPitch, modulatedGrainSize);
+            mainHeads[h].ramp += rampInc;
+            mainHeads[h].readPosition += modulatedPitch;
+
+            // Wrap read position
+            while (mainHeads[h].readPosition >= bufSize)
+                mainHeads[h].readPosition -= bufSize;
+            while (mainHeads[h].readPosition < 0.0f)
+                mainHeads[h].readPosition += bufSize;
+
+            // When ramp completes, reset head back near the write position
+            if (mainHeads[h].ramp >= 1.0f)
+            {
+                mainHeads[h].ramp -= 1.0f;
+                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
+                resetPos += resetJitter * (random.nextFloat() * 2.0f - 1.0f);
+                while (resetPos < 0.0f) resetPos += bufSize;
+                while (resetPos >= bufSize) resetPos -= bufSize;
+                mainHeads[h].readPosition = resetPos;
+            }
         }
 
-        // Update detune grain positions
+        // Advance detune heads (PANIC)
         if (panicVal > 0.001f)
         {
-            updateGrain(detuneGrains[0], modulatedPitch * (detuneUp + detuneDrift), modulatedGrainSize);
-            updateGrain(detuneGrains[1], modulatedPitch * (detuneDown - detuneDrift), modulatedGrainSize);
+            const float detuneRampIncUp = (modulatedPitch * detuneUp - 1.0f) / static_cast<float>(modWindowSize);
+            const float detuneRampIncDown = (modulatedPitch * detuneDown - 1.0f) / static_cast<float>(modWindowSize);
+
+            detuneHeads[0].ramp += detuneRampIncUp;
+            detuneHeads[0].readPosition += modulatedPitch * detuneUp;
+            while (detuneHeads[0].readPosition >= bufSize) detuneHeads[0].readPosition -= bufSize;
+            while (detuneHeads[0].readPosition < 0.0f) detuneHeads[0].readPosition += bufSize;
+            if (detuneHeads[0].ramp >= 1.0f)
+            {
+                detuneHeads[0].ramp -= 1.0f;
+                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
+                while (resetPos < 0.0f) resetPos += bufSize;
+                detuneHeads[0].readPosition = resetPos;
+            }
+
+            detuneHeads[1].ramp += detuneRampIncDown;
+            detuneHeads[1].readPosition += modulatedPitch * detuneDown;
+            while (detuneHeads[1].readPosition >= bufSize) detuneHeads[1].readPosition -= bufSize;
+            while (detuneHeads[1].readPosition < 0.0f) detuneHeads[1].readPosition += bufSize;
+            if (detuneHeads[1].ramp >= 1.0f)
+            {
+                detuneHeads[1].ramp -= 1.0f;
+                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
+                while (resetPos < 0.0f) resetPos += bufSize;
+                detuneHeads[1].readPosition = resetPos;
+            }
         }
 
         // Advance ring mod oscillator
@@ -469,7 +431,6 @@ void PitchShifter::setRiseTime(float riseMs)
     const double riseSec = std::max(0.001, static_cast<double>(riseTimeMs) * 0.001);
     const double fallSec = std::max(0.001, static_cast<double>(fallTimeMs) * 0.001);
 
-    // Coefficient for exponential smoothing
     riseCoeff = static_cast<float>(1.0 - std::exp(-1.0 / (safeRate * riseSec)));
     fallCoeff = static_cast<float>(1.0 - std::exp(-1.0 / (safeRate * fallSec)));
 
