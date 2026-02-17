@@ -12,30 +12,43 @@ void OctaveGenerator::prepare(const juce::dsp::ProcessSpec& spec)
     const double smoothingTime = 0.02;
     glare.reset(sampleRate, smoothingTime);
 
-    preEmphasisHP.prepare(spec);
+    // Initialize 2x oversampling
+    oversampling.initProcessing(static_cast<size_t>(maxBlockSize));
+
+    // Filters run at oversampled rate
+    const double osRate = sampleRate * 2.0;
+    juce::dsp::ProcessSpec osSpec;
+    osSpec.sampleRate = osRate;
+    osSpec.maximumBlockSize = spec.maximumBlockSize * 2;
+    osSpec.numChannels = spec.numChannels;
+
+    preEmphasisHP.prepare(osSpec);
     preEmphasisHP.setType(juce::dsp::StateVariableTPTFilterType::highpass);
     preEmphasisHP.setCutoffFrequency(preHPFreq);
     preEmphasisHP.setResonance(0.707f);
 
-    preEmphasisLP.prepare(spec);
+    preEmphasisLP.prepare(osSpec);
     preEmphasisLP.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
     preEmphasisLP.setCutoffFrequency(preLPFreq);
     preEmphasisLP.setResonance(0.707f);
 
-    dcBlockFilter.prepare(spec);
+    dcBlockFilter.prepare(osSpec);
     dcBlockFilter.setType(juce::dsp::StateVariableTPTFilterType::highpass);
     dcBlockFilter.setCutoffFrequency(dcBlockFreq);
     dcBlockFilter.setResonance(0.707f);
 
-    octaveBandpass.prepare(spec);
+    octaveBandpass.prepare(osSpec);
     octaveBandpass.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
     octaveBandpass.setCutoffFrequency(bandpassFreq);
     octaveBandpass.setResonance(bandpassQ);
 
-    octaveHighShelf.prepare(spec);
+    octaveHighShelf.prepare(osSpec);
     octaveHighShelf.setType(juce::dsp::StateVariableTPTFilterType::highpass);
     octaveHighShelf.setCutoffFrequency(800.0f);
     octaveHighShelf.setResonance(0.5f);
+
+    // Compute post-rectification smoothing at oversampled rate (~2kHz cutoff)
+    smoothingCoeff = static_cast<float>(std::exp(-2.0 * juce::MathConstants<double>::pi * 2000.0 / osRate));
 
     // Pre-allocate buffer to avoid audio thread allocation
     octaveBuffer.setSize(numChannels, maxBlockSize, false, true, true);
@@ -49,6 +62,7 @@ void OctaveGenerator::reset()
 {
     glare.reset(sampleRate, 0.02);
 
+    oversampling.reset();
     preEmphasisHP.reset();
     preEmphasisLP.reset();
     dcBlockFilter.reset();
@@ -69,7 +83,7 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
     if (octaveBuffer.getNumSamples() < numSamples || octaveBuffer.getNumChannels() < channels)
         octaveBuffer.setSize(channels, numSamples, false, false, true);
 
-    // Copy input to octave buffer using SIMD-optimized copy
+    // Copy input to octave buffer
     for (int ch = 0; ch < channels; ++ch)
     {
         juce::FloatVectorOperations::copy(octaveBuffer.getWritePointer(ch),
@@ -77,66 +91,60 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
                                           numSamples);
     }
 
-    // Process filters on octave buffer
+    // Create AudioBlock for oversampling
+    juce::dsp::AudioBlock<float> octaveBlock(octaveBuffer.getArrayOfWritePointers(),
+                                              static_cast<size_t>(channels),
+                                              static_cast<size_t>(numSamples));
+
+    // Upsample to 2x rate
+    auto oversampledBlock = oversampling.processSamplesUp(octaveBlock);
+    const auto osNumSamples = oversampledBlock.getNumSamples();
+    const auto osNumChannels = oversampledBlock.getNumChannels();
+
+    // Pre-emphasis filters at oversampled rate
     {
-        juce::dsp::AudioBlock<float> octaveBlock(octaveBuffer.getArrayOfWritePointers(),
-                                                  static_cast<size_t>(channels),
-                                                  static_cast<size_t>(numSamples));
-        juce::dsp::ProcessContextReplacing<float> context(octaveBlock);
+        juce::dsp::ProcessContextReplacing<float> context(oversampledBlock);
         preEmphasisHP.process(context);
     }
-
     {
-        juce::dsp::AudioBlock<float> octaveBlock(octaveBuffer.getArrayOfWritePointers(),
-                                                  static_cast<size_t>(channels),
-                                                  static_cast<size_t>(numSamples));
-        juce::dsp::ProcessContextReplacing<float> context(octaveBlock);
+        juce::dsp::ProcessContextReplacing<float> context(oversampledBlock);
         preEmphasisLP.process(context);
     }
 
-    // Full-wave rectification with smoothing - optimized loop
-    for (int channel = 0; channel < channels; ++channel)
+    // Full-wave rectification with smoothing at oversampled rate
+    for (size_t channel = 0; channel < osNumChannels; ++channel)
     {
-        float* octaveData = octaveBuffer.getWritePointer(channel);
-        float prevSample = previousSample[static_cast<size_t>(channel)];
+        float* octaveData = oversampledBlock.getChannelPointer(channel);
+        float prevSample = previousSample[channel];
+        const float inputCoeff = 1.0f - smoothingCoeff;
 
-        for (int sample = 0; sample < numSamples; ++sample)
+        for (size_t sample = 0; sample < osNumSamples; ++sample)
         {
-            // Branchless abs using SIMD intrinsic
             const float rectified = std::abs(octaveData[sample]);
-            // One-pole lowpass smoothing (0.6/0.4 for slightly looser tracking, more organic feel)
-            const float smoothed = rectified * 0.6f + prevSample * 0.4f;
+            const float smoothed = rectified * inputCoeff + prevSample * smoothingCoeff;
             prevSample = smoothed;
             octaveData[sample] = smoothed;
         }
 
-        previousSample[static_cast<size_t>(channel)] = prevSample;
+        previousSample[channel] = prevSample;
     }
 
-    // Post-rectification filtering
+    // Post-rectification filtering at oversampled rate
     {
-        juce::dsp::AudioBlock<float> octaveBlock(octaveBuffer.getArrayOfWritePointers(),
-                                                  static_cast<size_t>(channels),
-                                                  static_cast<size_t>(numSamples));
-        juce::dsp::ProcessContextReplacing<float> context(octaveBlock);
+        juce::dsp::ProcessContextReplacing<float> context(oversampledBlock);
         dcBlockFilter.process(context);
     }
-
     {
-        juce::dsp::AudioBlock<float> octaveBlock(octaveBuffer.getArrayOfWritePointers(),
-                                                  static_cast<size_t>(channels),
-                                                  static_cast<size_t>(numSamples));
-        juce::dsp::ProcessContextReplacing<float> context(octaveBlock);
+        juce::dsp::ProcessContextReplacing<float> context(oversampledBlock);
         octaveBandpass.process(context);
     }
-
     {
-        juce::dsp::AudioBlock<float> octaveBlock(octaveBuffer.getArrayOfWritePointers(),
-                                                  static_cast<size_t>(channels),
-                                                  static_cast<size_t>(numSamples));
-        juce::dsp::ProcessContextReplacing<float> context(octaveBlock);
+        juce::dsp::ProcessContextReplacing<float> context(oversampledBlock);
         octaveHighShelf.process(context);
     }
+
+    // Downsample back to native rate
+    oversampling.processSamplesDown(octaveBlock);
 
     // Mix octave into output - optimized with reduced branching
     float octaveLevelSum = 0.0f;
@@ -145,9 +153,9 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
     if (!glare.isSmoothing())
     {
         const float currentGlare = glare.getTargetValue();
-        // Use glare^1.5 curve for smoother blend progression (less abrupt than glare²)
+        // Use glare^1.5 curve for smoother blend progression (less abrupt than glare^2)
         const float glareCurved = std::pow(currentGlare, 1.5f);
-        const float octaveGain = glareCurved * 1.6f;  // Slightly reduced from 2.0 for better mix balance
+        const float octaveGain = glareCurved * 1.6f;
 
         if (octaveGain > 0.0001f)
         {
@@ -170,7 +178,6 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
         for (int sample = 0; sample < numSamples; ++sample)
         {
             const float currentGlare = glare.getNextValue();
-            // Use glare^1.5 curve for smoother blend progression
             const float glareCurved = std::pow(currentGlare, 1.5f);
             const float octaveGain = glareCurved * 1.6f;
 

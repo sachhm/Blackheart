@@ -102,8 +102,8 @@ void FuzzEngine::configureFiltersForMode(int mode)
             preEqPeak.setResonance(2.0f);
             preEqShelf.setCutoffFrequency(20000.0f);  // Effectively bypassed
             preEqShelf.setResonance(0.707f);
-            // Post: LPF 6kHz, presence at 3kHz
-            postEqLP.setCutoffFrequency(6000.0f);
+            // Post: LPF 9kHz, presence at 3kHz (preserves pick attack for metal)
+            postEqLP.setCutoffFrequency(9000.0f);
             postEqLP.setResonance(0.707f);
             postEqPeak.setCutoffFrequency(3000.0f);
             postEqPeak.setResonance(1.0f);
@@ -294,7 +294,7 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
             shaped = juce::jlimit(-0.95f, 0.95f, shaped);
 
             // Makeup gain + level
-            const float makeupGain = 1.0f / (0.5f + drive * 0.02f);
+            const float makeupGain = 1.0f / (1.0f + drive * 0.005f);
 
             // Level: map 0-1 to -inf..+24dB
             const float levelDb = currentLevel * 48.0f - 24.0f;  // 0->-24dB, 0.5->0dB, 1.0->+24dB

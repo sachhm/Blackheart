@@ -28,6 +28,15 @@ private:
 
     juce::SmoothedValue<float> glare { 0.3f };
 
+    // 2x oversampling for aliasing-free rectification
+    juce::dsp::Oversampling<float> oversampling {
+        2,  // numChannels
+        1,  // order (2^1 = 2x)
+        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,
+        true
+    };
+
+    // Filters run at oversampled rate
     juce::dsp::StateVariableTPTFilter<float> preEmphasisHP;
     juce::dsp::StateVariableTPTFilter<float> preEmphasisLP;
     juce::dsp::StateVariableTPTFilter<float> dcBlockFilter;
@@ -39,6 +48,9 @@ private:
 
     std::array<float, 2> previousSample = { 0.0f, 0.0f };
     float lastOctaveLevel = 0.0f;
+
+    // Post-rectification smoothing coefficient (computed in prepare)
+    float smoothingCoeff = 0.75f;
 
     static constexpr float preHPFreq = 150.0f;
     static constexpr float preLPFreq = 4000.0f;
