@@ -28,6 +28,7 @@ BlackheartAudioProcessor::BlackheartAudioProcessor()
     modeParam = apvts.getRawParameterValue(ParameterIDs::mode);
     shapeParam = apvts.getRawParameterValue(ParameterIDs::shape);
     panicParam = apvts.getRawParameterValue(ParameterIDs::panic);
+    chaosMixParam = apvts.getRawParameterValue(ParameterIDs::chaosMix);
 }
 
 BlackheartAudioProcessor::~BlackheartAudioProcessor()
@@ -193,6 +194,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout BlackheartAudioProcessor::cr
             .withStringFromValueFunction(percentFormat)
             .withValueFromStringFunction(percentParse)));
 
+    // CHAOS MIX: Dry/wet mix for chaos/pitch shifting section
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::chaosMix, 1 },
+        ParameterIDs::Labels::chaosMix,
+        ParameterIDs::chaosMixRange(),
+        ParameterIDs::Defaults::chaosMix,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction(percentFormat)
+            .withValueFromStringFunction(percentParse)));
+
     return layout;
 }
 
@@ -337,11 +348,13 @@ void BlackheartAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     const int numChannels = static_cast<int>(spec.numChannels);
     dryBuffer.setSize(numChannels, samplesPerBlock);
     stagingBuffer.setSize(numChannels, samplesPerBlock);
+    prePitchDryBuffer.setSize(numChannels, samplesPerBlock);
 
     //==========================================================================
     // LATENCY CALCULATION
     //==========================================================================
 
+    pitchShifterLatency = static_cast<int>(0.030 * sampleRate); // 30ms grain size
     totalLatencySamples = pitchShifterLatency;
     setLatencySamples(totalLatencySamples);
 
@@ -490,6 +503,7 @@ void BlackheartAudioProcessor::fetchParameterValues()
     currentMode = static_cast<int>(modeParam->load() + 0.5f);
     currentShape = shapeParam->load();
     currentPanic = panicParam->load();
+    currentChaosMix = chaosMixParam->load();
 }
 
 void BlackheartAudioProcessor::updateDSPParameters()
@@ -587,14 +601,14 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     {
         smoothedParams.setCurrentAndTargetValue(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic, currentChaosMix);
         isFirstBlock = false;
     }
     else
     {
         smoothedParams.updateTargets(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic, currentChaosMix);
     }
 
     updateDSPParameters();
@@ -714,8 +728,24 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     pitchShifter.setGrainSizeModulation(chaosMod.grainSizeMod);
     pitchShifter.setTimingModulation(chaosMod.timingMod);
 
+    // Save pre-pitch dry signal for chaos mix (pre-allocated buffer, no audio-thread allocation)
+    if (prePitchDryBuffer.getNumSamples() < numSamples || prePitchDryBuffer.getNumChannels() < numChannels)
+        prePitchDryBuffer.setSize(numChannels, numSamples, false, false, true);
+    for (int ch = 0; ch < numChannels; ++ch)
+        prePitchDryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
+
     // Process pitch shifting
     pitchShifter.process(buffer);
+
+    // Apply chaos mix (dry/wet blend for pitch section)
+    const float smoothedChaosMix = smoothedParams.chaosMix.getCurrentValue();
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        auto* wet = buffer.getWritePointer(ch);
+        const auto* dry = prePitchDryBuffer.getReadPointer(ch);
+        for (int i = 0; i < numSamples; ++i)
+            wet[i] = dry[i] + smoothedChaosMix * (wet[i] - dry[i]);
+    }
 
     float postPitchLevel = measurePeakLevel(buffer);
     signalMeters.postPitchLevel.store(postPitchLevel);
@@ -803,7 +833,7 @@ void BlackheartAudioProcessor::setStateInformation(const void* data, int sizeInB
 
         smoothedParams.setCurrentAndTargetValue(
             currentGain, currentGlare, currentBlend, currentLevel,
-            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic);
+            currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic, currentChaosMix);
         }
     }
 }
