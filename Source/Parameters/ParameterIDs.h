@@ -17,6 +17,7 @@ inline constexpr auto octave2  { "octave2" };
 inline constexpr auto mode     { "mode" };
 inline constexpr auto shape    { "shape" };
 inline constexpr auto panic    { "panic" };
+inline constexpr auto chaosMix { "chaosMix" };
 
 namespace Defaults
 {
@@ -32,6 +33,7 @@ namespace Defaults
     inline constexpr float mode    = 1.0f;   // 0=Up(Screaming), 1=Center(Overdrive), 2=Down(Doom)
     inline constexpr float shape   = 0.5f;
     inline constexpr float panic   = 0.0f;
+    inline constexpr float chaosMix = 0.7f;
 }
 
 namespace Ranges
@@ -85,6 +87,11 @@ namespace Ranges
     inline constexpr float panicMax  = 1.0f;
     inline constexpr float panicStep = 0.01f;
     inline constexpr float panicSkew = 1.0f;
+
+    inline constexpr float chaosMixMin  = 0.0f;
+    inline constexpr float chaosMixMax  = 1.0f;
+    inline constexpr float chaosMixStep = 0.01f;
+    inline constexpr float chaosMixSkew = 1.0f;
 }
 
 namespace Smoothing
@@ -99,6 +106,7 @@ namespace Smoothing
     inline constexpr double octaveRampSec = 0.008;  // Slightly slower for smoother octave transitions
     inline constexpr double shapeRampSec  = 0.02;   // Smooth shape transitions
     inline constexpr double panicRampSec  = 0.02;
+    inline constexpr double chaosMixRampSec = 0.03;
     // MODE has no smoothing — discrete switch, instant change
 }
 
@@ -116,6 +124,7 @@ namespace Labels
     inline const juce::String mode    { "Mode" };
     inline const juce::String shape   { "Shape" };
     inline const juce::String panic   { "Panic" };
+    inline const juce::String chaosMix { "Chaos Mix" };
 }
 
 namespace Units
@@ -179,6 +188,11 @@ inline juce::NormalisableRange<float> shapeRange()
 inline juce::NormalisableRange<float> panicRange()
 {
     return makeRange(Ranges::panicMin, Ranges::panicMax, Ranges::panicStep, Ranges::panicSkew);
+}
+
+inline juce::NormalisableRange<float> chaosMixRange()
+{
+    return makeRange(Ranges::chaosMixMin, Ranges::chaosMixMax, Ranges::chaosMixStep, Ranges::chaosMixSkew);
 }
 
 } // namespace ParameterIDs

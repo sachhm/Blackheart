@@ -33,27 +33,15 @@ public:
     bool isTransitioning() const { return transitionActive; }
 
 private:
-    struct Grain
+    // Dual-head delay line (Whammy/Noise-style pitch shifting)
+    struct DelayHead
     {
         float readPosition = 0.0f;
-        float phase = 0.0f;
-        bool active = true;
+        float ramp = 0.0f;       // Sawtooth ramp [0, 1) — sweep progress
     };
 
-    enum class TransitionState
-    {
-        Idle,
-        Engaging,
-        Engaged,
-        Disengaging
-    };
-
-    float getGrainWindow(float phase, float harshness) const;
     float readFromBuffer(int channel, float position) const;
-    void updateGrain(Grain& grain, float pitchRatio, int grainSizeSamples);
-    void updateTransition();
-    float applyExpCurve(float linearValue, bool isAttack) const;
-    void resetGrainsForTransition();
+    void resetHeadsForTransition();
 
     double sampleRate = 44100.0;
     int maxBlockSize = 512;
@@ -63,11 +51,9 @@ private:
     bool prevOctaveOneActive = false;
     bool prevOctaveTwoActive = false;
 
-    float targetPitchAmount = 0.0f;
     float currentPitchRatio = 1.0f;
     float currentMix = 0.0f;
 
-    float pitchSmoothState = 0.0f;
     float mixSmoothState = 0.0f;
 
     float riseTimeMs = 50.0f;
@@ -77,22 +63,17 @@ private:
 
     static constexpr float minRiseMs = 1.0f;
     static constexpr float maxRiseMs = 500.0f;
-    static constexpr float expCurveAmount = 3.0f;
 
-    TransitionState transitionState = TransitionState::Idle;
     bool transitionActive = false;
-    int transitionSampleCounter = 0;
-    int antiClickFadeSamples = 64;
-    float antiClickFadeGain = 1.0f;
 
     juce::SmoothedValue<float> chaos { 0.0f };
     juce::SmoothedValue<float> panic { 0.0f };
 
     float pitchModulation = 0.0f;
-    float grainSizeModulation = 0.0f;
-    float timingModulation = 0.0f;
+    float grainSizeModulation = 0.0f;  // Reused: modulates window size
+    float timingModulation = 0.0f;     // Reused: jitters reset position
 
-    // PANIC — detune engine
+    // PANIC — detuned head pairs
     float panicAmount = 0.0f;
 
     // Ring modulation
@@ -109,24 +90,23 @@ private:
     static constexpr float envelopeAttack = 0.01f;
     static constexpr float envelopeRelease = 0.001f;
 
-    // Variable grain count
-    int activeGrainCount = 2;
-
+    // Dual-head delay line
     static constexpr int maxChannels = 2;
     static constexpr int delayBufferSize = 8192;
-    static constexpr int maxGrains = 4;
-    static constexpr int maxDetuneGrains = 2;
+    static constexpr int numMainHeads = 2;
+    static constexpr int numDetuneHeads = 2;  // For PANIC
 
     std::array<std::array<float, delayBufferSize>, maxChannels> delayBuffer {};
     int writePosition = 0;
 
-    std::array<Grain, maxGrains> grains;
-    std::array<Grain, maxDetuneGrains> detuneGrains;
+    std::array<DelayHead, numMainHeads> mainHeads;
+    std::array<DelayHead, numDetuneHeads> detuneHeads;
 
-    int grainSizeSamples = 1024;
-    static constexpr float minGrainMs = 20.0f;
-    static constexpr float maxGrainMs = 40.0f;
-    static constexpr float defaultGrainMs = 30.0f;
+    // Window/crossfade parameters
+    int windowSizeSamples = 1024;
+    static constexpr float minWindowMs = 10.0f;
+    static constexpr float maxWindowMs = 60.0f;
+    static constexpr float defaultWindowMs = 30.0f;
 
     juce::Random random;
 
