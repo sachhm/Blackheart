@@ -11,21 +11,21 @@ class BlackheartLookAndFeel : public juce::LookAndFeel_V4
 public:
     BlackheartLookAndFeel()
     {
-        // Dark color scheme with red accents
-        setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(0xff121212));
-        setColour(juce::Slider::backgroundColourId, juce::Colour(0xff1e1e1e));
-        setColour(juce::Slider::trackColourId, juce::Colour(0xffcc3333));
+        // Gothic black & white color scheme
+        setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(0xff000000));
+        setColour(juce::Slider::backgroundColourId, juce::Colour(0xff1a1a1a));
+        setColour(juce::Slider::trackColourId, juce::Colour(0xffdddddd));
         setColour(juce::Slider::thumbColourId, juce::Colour(0xffdddddd));
-        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffcc3333));
+        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffffffff));
         setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff2a2a2a));
         setColour(juce::Label::textColourId, juce::Colour(0xffb0b0b0));
-        setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1e1e1e));
-        setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffcc3333));
+        setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a1a1a));
+        setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffeeeeee));
         setColour(juce::TextButton::textColourOffId, juce::Colour(0xff888888));
-        setColour(juce::TextButton::textColourOnId, juce::Colour(0xffffffff));
-        setColour(juce::TooltipWindow::backgroundColourId, juce::Colour(0xff2a2a2a));
+        setColour(juce::TextButton::textColourOnId, juce::Colour(0xff000000));
+        setColour(juce::TooltipWindow::backgroundColourId, juce::Colour(0xff1a1a1a));
         setColour(juce::TooltipWindow::textColourId, juce::Colour(0xffcccccc));
-        setColour(juce::TooltipWindow::outlineColourId, juce::Colour(0xff444444));
+        setColour(juce::TooltipWindow::outlineColourId, juce::Colour(0xff333333));
     }
 
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
@@ -43,7 +43,7 @@ public:
         // Outer glow when hovering
         if (slider.isMouseOver())
         {
-            g.setColour(juce::Colour(0x20cc3333));
+            g.setColour(juce::Colour(0x18ffffff));
             g.fillEllipse(rx - 3.0f, ry - 3.0f, rw + 6.0f, rw + 6.0f);
         }
 
@@ -68,9 +68,9 @@ public:
                               0.0f, rotaryStartAngle, angle, true);
 
         // Glow effect
-        g.setColour(juce::Colour(0x40cc3333));
+        g.setColour(juce::Colour(0x30ffffff));
         g.strokePath(arcPath, juce::PathStrokeType(5.0f));
-        g.setColour(juce::Colour(0xffcc3333));
+        g.setColour(juce::Colour(0xffffffff));
         g.strokePath(arcPath, juce::PathStrokeType(2.5f));
 
         // Pointer line
@@ -98,11 +98,11 @@ public:
         // Glow effect when active
         if (isOn)
         {
-            g.setColour(juce::Colour(0x30cc3333));
+            g.setColour(juce::Colour(0x20ffffff));
             g.fillRoundedRectangle(bounds.expanded(3.0f), 8.0f);
         }
 
-        auto baseColour = isOn ? juce::Colour(0xffcc3333) : backgroundColour;
+        auto baseColour = isOn ? button.findColour(juce::TextButton::buttonOnColourId) : backgroundColour;
         if (isMouseOverButton && !isOn)
             baseColour = baseColour.brighter(0.15f);
 
@@ -110,7 +110,7 @@ public:
         g.fillRoundedRectangle(bounds, 6.0f);
 
         // Border
-        g.setColour(isOn ? juce::Colour(0xffee5555) : juce::Colour(0xff3a3a3a));
+        g.setColour(isOn ? baseColour.brighter(0.3f) : juce::Colour(0xff333333));
         g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
     }
 };
@@ -120,7 +120,7 @@ public:
 class LEDIndicator : public juce::Component, public juce::Timer
 {
 public:
-    LEDIndicator(juce::Colour onColour = juce::Colour(0xffcc3333))
+    LEDIndicator(juce::Colour onColour = juce::Colour(0xffeeeeee))
         : ledOnColour(onColour)
     {
         startTimerHz(30);
@@ -145,7 +145,7 @@ public:
         g.fillEllipse(ledBounds);
 
         // LED light
-        const auto litColour = ledOnColour.interpolatedWith(juce::Colour(0xff331111), 1.0f - smoothedBrightness);
+        const auto litColour = ledOnColour.interpolatedWith(juce::Colour(0xff222222), 1.0f - smoothedBrightness);
         g.setColour(litColour);
         g.fillEllipse(ledBounds.reduced(2.0f));
 
@@ -445,7 +445,7 @@ public:
 
         nameLabel.setText(name, juce::dontSendNotification);
         nameLabel.setJustificationType(juce::Justification::centred);
-        nameLabel.setFont(juce::Font(11.0f, juce::Font::bold));
+        nameLabel.setFont(juce::Font(13.0f, juce::Font::bold));
         addAndMakeVisible(nameLabel);
 
         valueLabel.setJustificationType(juce::Justification::centred);
@@ -462,7 +462,7 @@ public:
     void resized() override
     {
         auto bounds = getLocalBounds();
-        nameLabel.setBounds(bounds.removeFromTop(16));
+        nameLabel.setBounds(bounds.removeFromTop(18));
         valueLabel.setBounds(bounds.removeFromBottom(14));
         slider.setBounds(bounds.reduced(2));
     }
@@ -514,12 +514,12 @@ public:
         if (glowAmount > 0.05f)
         {
             const float pulseGlow = glowAmount * (0.8f + 0.2f * std::sin(pulsePhase));
-            g.setColour(juce::Colour(0xffcc3333).withAlpha(pulseGlow * 0.5f));
+            g.setColour(juce::Colour(0xffffffff).withAlpha(pulseGlow * 0.4f));
             g.fillRoundedRectangle(bounds.expanded(4.0f * pulseGlow), 10.0f);
         }
 
         // Button background
-        auto baseColour = isActive ? juce::Colour(0xffcc3333) : juce::Colour(0xff1e1e1e);
+        auto baseColour = isActive ? juce::Colour(0xffdddddd) : juce::Colour(0xff1a1a1a);
         if (isMouseOver() && !isActive)
             baseColour = baseColour.brighter(0.1f);
 
@@ -529,16 +529,16 @@ public:
         // Inner highlight when pressed
         if (isActive)
         {
-            g.setColour(juce::Colour(0x30ffffff));
+            g.setColour(juce::Colour(0x20ffffff));
             g.fillRoundedRectangle(bounds.reduced(2.0f).withTrimmedBottom(bounds.getHeight() * 0.5f), 4.0f);
         }
 
         // Border
-        g.setColour(isActive ? juce::Colour(0xffee5555) : juce::Colour(0xff3a3a3a));
+        g.setColour(isActive ? juce::Colour(0xffffffff) : juce::Colour(0xff333333));
         g.drawRoundedRectangle(bounds, 6.0f, 1.5f);
 
         // Text
-        g.setColour(isActive ? juce::Colours::white : juce::Colour(0xff888888));
+        g.setColour(isActive ? juce::Colour(0xff000000) : juce::Colour(0xff888888));
         g.setFont(juce::Font(13.0f, juce::Font::bold));
         g.drawText(getButtonText(), bounds, juce::Justification::centred);
     }
@@ -593,6 +593,7 @@ private:
     BlackheartAudioProcessor& audioProcessor;
     BlackheartLookAndFeel blackheartLookAndFeel;
     juce::TooltipWindow tooltipWindow{ this, 500 };
+    juce::Typeface::Ptr blackletterTypeface;
 
     // Knobs - Fuzz section
     LabeledKnob gainKnob   { "GAIN", "%", "Controls distortion intensity" };
@@ -613,6 +614,7 @@ private:
     LabeledKnob chaosKnob  { "CHAOS", "%", "Modulation depth and randomness" };
     LabeledKnob riseKnob   { "RISE", "ms", "Pitch shift attack/release time" };
     LabeledKnob panicKnob  { "PANIC", "%", "Detuned pitch destruction — subtle chorus to full atonal chaos" };
+    LabeledKnob chaosMixKnob { "MIX", "%", "Dry/wet mix for pitch/chaos section" };
 
     // Octave buttons
     MomentaryButton octave1Button { "+1 OCT" };
@@ -621,11 +623,14 @@ private:
     // LED indicators
     LEDIndicator octave1LED;
     LEDIndicator octave2LED;
+    LEDIndicator modeScreamLED;
+    LEDIndicator modeODLED;
+    LEDIndicator modeDoomLED;
 
     // Visualizers
     LevelMeter inputMeter;
     LevelMeter outputMeter;
-    ChaosVisualizer chaosVisualizer;
+    ChaosVisualizer chaosVisualizer;  // kept for timer-based modulation display
     OscilloscopeDisplay oscilloscope;
 
     // Section labels
@@ -644,6 +649,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> riseAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> shapeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> panicAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> chaosMixAttachment;
 
     void setupKnobAttachments();
     void setupOctaveButtons();
