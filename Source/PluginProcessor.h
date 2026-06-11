@@ -260,6 +260,9 @@ public:
     // Latency reporting
     int getLatencyInSamples() const { return totalLatencySamples; }
 
+    // CPU load — 0..1, EMA-smoothed processBlock cost / block duration
+    float getCpuLoad() const { return cpuLoad.load(std::memory_order_relaxed); }
+
     // Stability monitoring
     bool isStable() const { return !stabilityError; }
     void resetStabilityError() { stabilityError = false; }
@@ -327,6 +330,7 @@ private:
     float chaosEnvelope = 0.0f;
 
     double currentSampleRate = 44100.0;
+    std::atomic<float> cpuLoad { 0.0f };
     int currentBlockSize = 512;
     bool isFirstBlock = true;
     bool testModeEnabled = false;

@@ -8,6 +8,10 @@
     <GROUP id="{F1A2B3C4-D5E6-7890-ABCD-123456789ABC}" name="Resources">
       <FILE id="res001" name="UnifrakturMaguntia-Regular.ttf" compile="0" resource="1"
             file="Resources/UnifrakturMaguntia-Regular.ttf"/>
+      <FILE id="res002" name="ArchivoBlack-Regular.ttf" compile="0" resource="1"
+            file="Source/Fonts/ArchivoBlack-Regular.ttf"/>
+      <FILE id="res003" name="IBMPlexMono-Regular.ttf" compile="0" resource="1"
+            file="Source/Fonts/IBMPlexMono-Regular.ttf"/>
     </GROUP>
     <GROUP id="{E8CD8262-7D4A-F083-6209-9E3D8E9B51C4}" name="Source">
       <GROUP id="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}" name="Parameters">
@@ -47,6 +51,34 @@
             file="Source/PluginProcessor.cpp"/>
       <FILE id="whPbY5" name="PluginProcessor.h" compile="0" resource="0"
             file="Source/PluginProcessor.h"/>
+      <GROUP id="{C1D2E3F4-A5B6-7890-CDEF-234567890ABC}" name="UI">
+        <FILE id="ui016" name="BlackheartPalette.h" compile="0" resource="0"
+              file="Source/UI/BlackheartPalette.h"/>
+        <FILE id="ui002" name="BlackheartLookAndFeel.h" compile="0" resource="0"
+              file="Source/UI/BlackheartLookAndFeel.h"/>
+        <FILE id="ui003" name="BlackheartLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/UI/BlackheartLookAndFeel.cpp"/>
+        <FILE id="ui004" name="FlatKnob.h" compile="0" resource="0"
+              file="Source/UI/FlatKnob.h"/>
+        <FILE id="ui005" name="FlatKnob.cpp" compile="1" resource="0"
+              file="Source/UI/FlatKnob.cpp"/>
+        <FILE id="ui010" name="PillButton.h" compile="0" resource="0"
+              file="Source/UI/PillButton.h"/>
+        <FILE id="ui011" name="PillButton.cpp" compile="1" resource="0"
+              file="Source/UI/PillButton.cpp"/>
+        <FILE id="ui012" name="Scope.h" compile="0" resource="0"
+              file="Source/UI/Scope.h"/>
+        <FILE id="ui013" name="Scope.cpp" compile="1" resource="0"
+              file="Source/UI/Scope.cpp"/>
+        <FILE id="ui017" name="HeaderStrip.h" compile="0" resource="0"
+              file="Source/UI/HeaderStrip.h"/>
+        <FILE id="ui018" name="HeaderStrip.cpp" compile="1" resource="0"
+              file="Source/UI/HeaderStrip.cpp"/>
+        <FILE id="ui019" name="StatusStrip.h" compile="0" resource="0"
+              file="Source/UI/StatusStrip.h"/>
+        <FILE id="ui020" name="StatusStrip.cpp" compile="1" resource="0"
+              file="Source/UI/StatusStrip.cpp"/>
+      </GROUP>
       <FILE id="mmSnB6" name="PluginEditor.cpp" compile="1" resource="0"
             file="Source/PluginEditor.cpp"/>
       <FILE id="RHqdgG" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>

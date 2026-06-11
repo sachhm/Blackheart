@@ -571,6 +571,8 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
 
+    const auto cpuStart = std::chrono::high_resolution_clock::now();
+
     const auto totalNumInputChannels = getTotalNumInputChannels();
     const auto totalNumOutputChannels = getTotalNumOutputChannels();
 
@@ -783,6 +785,19 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         // The output limiter should handle this, so just reset the counter
         consecutiveHighLevelBlocks = 0;
         stabilityError = true;
+    }
+
+    // CPU load: elapsed processing time / block duration. EMA smoothed.
+    {
+        const auto cpuEnd = std::chrono::high_resolution_clock::now();
+        const double elapsedSec = std::chrono::duration<double>(cpuEnd - cpuStart).count();
+        const double blockSec = currentSampleRate > 0.0
+            ? static_cast<double>(numSamples) / currentSampleRate
+            : 0.0;
+        const float instant = blockSec > 0.0 ? juce::jlimit(0.0f, 1.0f, static_cast<float>(elapsedSec / blockSec)) : 0.0f;
+        constexpr float alpha = 0.1f;
+        const float prev = cpuLoad.load(std::memory_order_relaxed);
+        cpuLoad.store(prev + alpha * (instant - prev), std::memory_order_relaxed);
     }
 }
 
