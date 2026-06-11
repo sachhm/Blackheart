@@ -27,6 +27,9 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
 
     setRiseTime(riseTimeMs);
 
+    envelopeAttackCoeff = static_cast<float>(1.0 - std::exp(-1.0 / (sampleRate * envelopeAttackMs * 0.001)));
+    envelopeReleaseCoeff = static_cast<float>(1.0 - std::exp(-1.0 / (sampleRate * envelopeReleaseMs * 0.001)));
+
     for (int ch = 0; ch < maxChannels; ++ch)
         delayBuffer[ch].assign(static_cast<size_t>(delayBufferSize), 0.0f);
 
@@ -122,7 +125,9 @@ float PitchShifter::readFromBuffer(int channel, float position) const
 void PitchShifter::resetHeadsForTransition()
 {
     const float bufSize = static_cast<float>(delayBufferSize);
-    const float startPos = static_cast<float>(writePosition) - static_cast<float>(windowSizeSamples);
+    // Extra 4-sample guard: the sweep ends at delay ~4 instead of 0, so Hermite
+    // interpolation (reads idx+2) never touches samples not yet written
+    const float startPos = static_cast<float>(writePosition) - static_cast<float>(windowSizeSamples) - 4.0f;
 
     float pos = startPos;
     if (pos < 0.0f) pos += bufSize;
@@ -161,13 +166,18 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
     const float targetMix = anyOctaveActive ? 1.0f : 0.0f;
 
     const bool wasActive = prevOctaveOneActive || prevOctaveTwoActive;
-    const bool stateChanged = (wasActive != anyOctaveActive) ||
-                              (anyOctaveActive && (prevOctaveOneActive != oct1Active ||
-                                                   prevOctaveTwoActive != oct2Active));
 
-    if (stateChanged && anyOctaveActive)
+    // Only reset heads when engaging from idle (mix near zero masks the jump).
+    // Switching oct1<->oct2 while held must NOT reset — at full wet the position
+    // jump is an audible click; the ratio glide alone handles the transition.
+    if (!wasActive && anyOctaveActive)
     {
         resetHeadsForTransition();
+        transitionActive = true;
+    }
+    else if (wasActive && anyOctaveActive &&
+             (prevOctaveOneActive != oct1Active || prevOctaveTwoActive != oct2Active))
+    {
         transitionActive = true;
     }
 
@@ -183,10 +193,20 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
     for (int ch = 0; ch < processChannels; ++ch)
         channelData[ch] = buffer.getWritePointer(ch);
 
+    const bool hasModBuffers = (pitchModBuffer != nullptr && grainModBuffer != nullptr
+                                && timingModBuffer != nullptr);
+
     for (int sample = 0; sample < numSamples; ++sample)
     {
         const float chaosVal = chaos.getNextValue();
         const float panicVal = panic.getNextValue();
+
+        if (hasModBuffers)
+        {
+            pitchModulation = pitchModBuffer[sample];
+            grainSizeModulation = grainModBuffer[sample];
+            timingModulation = timingModBuffer[sample];
+        }
 
         // Write input to delay buffer with feedback
         for (int ch = 0; ch < processChannels; ++ch)
@@ -268,8 +288,10 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 {
                     // Blend between cosine and rectangular based on harshness
                     const float cosGain = 0.5f - 0.5f * LookupTables::fastCos(ramp);
-                    // Rectangular: 1.0 in middle, 0.0 at edges
-                    const float edgeFade = 0.05f * (1.0f - harshness) + 0.001f;
+                    // Rectangular: 1.0 in middle, 0.0 at edges.
+                    // Floor of 0.02 keeps a minimal fade even at max harshness so
+                    // grain boundaries never hard-discontinue
+                    const float edgeFade = 0.05f * (1.0f - harshness) + 0.02f;
                     float rectGain = 1.0f;
                     if (ramp < edgeFade)
                         rectGain = ramp / edgeFade;
@@ -280,6 +302,10 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
 
                 wetSum += readFromBuffer(ch, mainHeads[h].readPosition) * gain;
             }
+
+            // Two 180° offset Hann windows sum to exactly 1.0; rectangular
+            // windows sum toward 2.0, so renormalize as harshness blends in
+            wetSum /= (1.0f + harshness);
 
             // PANIC detuned heads
             if (panicVal > 0.001f)
@@ -292,8 +318,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 }
             }
 
-            // Normalize: main heads sum to ~1.0 with cosine crossfade (two 180° offset Hann = constant)
-            // PANIC adds on top, scaled by panicVal
+            // PANIC adds on top of normalized main heads, scaled by panicVal
             float wetOutput = wetSum;
 
             if (!std::isfinite(wetOutput))
@@ -357,8 +382,9 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             if (mainHeads[h].ramp >= 1.0f || mainHeads[h].ramp < 0.0f)
             {
                 mainHeads[h].ramp -= std::floor(mainHeads[h].ramp);
-                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
-                resetPos += resetJitter * (random.nextFloat() * 2.0f - 1.0f);
+                // -4: interpolation guard, sweep ends before reaching the write head
+                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize) - 4.0f;
+                resetPos -= std::abs(resetJitter * (random.nextFloat() * 2.0f - 1.0f));
                 while (resetPos < 0.0f) resetPos += bufSize;
                 while (resetPos >= bufSize) resetPos -= bufSize;
                 mainHeads[h].readPosition = resetPos;
@@ -378,7 +404,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             if (detuneHeads[0].ramp >= 1.0f || detuneHeads[0].ramp < 0.0f)
             {
                 detuneHeads[0].ramp -= std::floor(detuneHeads[0].ramp);
-                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
+                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize) - 4.0f;
                 while (resetPos < 0.0f) resetPos += bufSize;
                 detuneHeads[0].readPosition = resetPos;
             }
@@ -390,7 +416,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             if (detuneHeads[1].ramp >= 1.0f || detuneHeads[1].ramp < 0.0f)
             {
                 detuneHeads[1].ramp -= std::floor(detuneHeads[1].ramp);
-                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
+                float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize) - 4.0f;
                 while (resetPos < 0.0f) resetPos += bufSize;
                 detuneHeads[1].readPosition = resetPos;
             }
@@ -467,6 +493,13 @@ void PitchShifter::setGrainSizeModulation(float mod)
 void PitchShifter::setTimingModulation(float mod)
 {
     timingModulation = std::isfinite(mod) ? juce::jlimit(-1.0f, 1.0f, mod) : 0.0f;
+}
+
+void PitchShifter::setModulationBuffers(const float* pitchMod, const float* grainMod, const float* timingMod)
+{
+    pitchModBuffer = pitchMod;
+    grainModBuffer = grainMod;
+    timingModBuffer = timingMod;
 }
 
 void PitchShifter::setPanic(float normalizedPanic)

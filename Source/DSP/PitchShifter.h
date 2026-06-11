@@ -29,12 +29,19 @@ public:
     void setGrainSizeModulation(float mod);
     void setTimingModulation(float mod);
 
+    // Per-sample modulation buffers (preferred over the scalar setters above).
+    // Pointers must remain valid for the duration of the next process() call
+    // and hold at least numSamples values. Pass nullptr to fall back to scalars.
+    void setModulationBuffers(const float* pitchMod, const float* grainMod, const float* timingMod);
+
     bool isOctaveOneActive() const { return octaveOneActive.load(std::memory_order_relaxed); }
     bool isOctaveTwoActive() const { return octaveTwoActive.load(std::memory_order_relaxed); }
     float getCurrentPitchRatio() const { return currentPitchRatio; }
     float getCurrentMix() const { return currentMix; }
     bool isTransitioning() const { return transitionActive; }
-    int getLatencySamples() const { return windowSizeSamples; }
+    // Dry path through the shifter is undelayed and wet delay sweeps window->0,
+    // so this is a pitch-glide effect delay, not reportable PDC latency.
+    int getLatencySamples() const { return 0; }
 
 private:
     // Dual-head delay line (Whammy/Noise-style pitch shifting)
@@ -77,6 +84,10 @@ private:
     float grainSizeModulation = 0.0f;  // Reused: modulates window size
     float timingModulation = 0.0f;     // Reused: jitters reset position
 
+    const float* pitchModBuffer = nullptr;
+    const float* grainModBuffer = nullptr;
+    const float* timingModBuffer = nullptr;
+
     // PANIC — detuned head pairs
     float panicAmount = 0.0f;
 
@@ -91,8 +102,12 @@ private:
     // Gain compensation envelopes (per channel — shared state skews stereo)
     std::array<float, 2> dryEnvelope {};
     std::array<float, 2> wetEnvelope {};
-    static constexpr float envelopeAttack = 0.01f;
-    static constexpr float envelopeRelease = 0.001f;
+    // Time constants match legacy 0.01/0.001 per-sample coeffs at 44.1kHz;
+    // actual coefficients derived in prepare() so behavior is SR-invariant
+    static constexpr float envelopeAttackMs = 2.27f;
+    static constexpr float envelopeReleaseMs = 22.7f;
+    float envelopeAttackCoeff = 0.01f;
+    float envelopeReleaseCoeff = 0.001f;
 
     // Dual-head delay line
     static constexpr int maxChannels = 2;

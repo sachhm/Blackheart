@@ -217,6 +217,17 @@ void ChaosModulator::process(int numSamples)
     }
 }
 
+void ChaosModulator::processToBuffers(float* pitchMod, float* grainMod, float* timingMod, int numSamples)
+{
+    for (int i = 0; i < numSamples; ++i)
+    {
+        getNextModulationValue();
+        pitchMod[i] = currentOutput.pitchMod;
+        grainMod[i] = currentOutput.grainSizeMod;
+        timingMod[i] = currentOutput.timingMod;
+    }
+}
+
 ChaosModulator::ModulationOutput ChaosModulator::getModulation() const
 {
     return currentOutput;
@@ -231,8 +242,10 @@ float ChaosModulator::getNextModulationValue()
 
     const float envelopeContribution = smoothedEnvelopeInfluence;
 
-    // Reduced minimum chaos for more dynamic range (chaos responds more to playing intensity)
-    const float minChaosAtLowEnvelope = 0.0f;
+    // Floor keeps the Chaos knob alive on quiet/sustained input — envelope adds
+    // emphasis on top of a constant instability baseline rather than gating it
+    // fully (full gating made the knob feel dead and chaos vanish mid-note)
+    const float minChaosAtLowEnvelope = 0.35f;
     effectiveChaosAmount = baseChaos * (minChaosAtLowEnvelope + envelopeContribution * (1.0f - minChaosAtLowEnvelope));
 
     // Cross-modulation: at chaos > 0.7, envelope modulates LFO speed
@@ -303,14 +316,13 @@ float ChaosModulator::getNextModulationValue()
                      sampleAndHoldSmoothed * (sampleHoldWeight + noiseWeight * 0.5f) +
                      randomWalkValue * randomWalkWeight;
 
+    // Final depth = mix weights (already ~chaos^2) x envelope emphasis.
+    // No extra multiply by effectiveChaosAmount — that made overall depth
+    // ~chaos^3 x env^2 and pushed all audible action above knob position 0.7
     const float dynamicDepth = 0.3f + envelopeContribution * 0.7f;
     pitchMod *= dynamicDepth;
     grainSizeMod *= dynamicDepth;
     timingMod *= dynamicDepth;
-
-    pitchMod *= effectiveChaosAmount;
-    grainSizeMod *= effectiveChaosAmount;
-    timingMod *= effectiveChaosAmount;
 
     currentOutput.pitchMod = pitchMod;
     currentOutput.grainSizeMod = grainSizeMod;

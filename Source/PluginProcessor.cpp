@@ -351,6 +351,11 @@ void BlackheartAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     stagingBuffer.setSize(numChannels, samplesPerBlock);
     prePitchDryBuffer.setSize(numChannels, samplesPerBlock);
 
+    pitchModBuffer.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
+    grainModBuffer.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
+    timingModBuffer.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
+    pitchShifter.setModulationBuffers(pitchModBuffer.data(), grainModBuffer.data(), timingModBuffer.data());
+
     //==========================================================================
     // LATENCY CALCULATION
     //==========================================================================
@@ -713,17 +718,14 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     chaosEnvelope = chaosEnvelopeFollower.processBlock(buffer);
     chaosModulator.setEnvelopeValue(chaosEnvelope);
 
-    // Generate modulation values
-    chaosModulator.process(numSamples);
+    // Generate per-sample modulation into pre-allocated buffers — the pitch
+    // shifter reads these per sample (block-rate consumption aliased the LFO)
+    chaosModulator.processToBuffers(pitchModBuffer.data(), grainModBuffer.data(),
+                                    timingModBuffer.data(), numSamples);
     const auto chaosMod = chaosModulator.getModulation();
 
     // Store chaos modulation for visualization (lock-free)
     chaosModValue.store(chaosMod.combinedMod, std::memory_order_relaxed);
-
-    // Apply modulation to pitch shifter
-    pitchShifter.setPitchModulation(chaosMod.pitchMod);
-    pitchShifter.setGrainSizeModulation(chaosMod.grainSizeMod);
-    pitchShifter.setTimingModulation(chaosMod.timingMod);
 
     // Save pre-pitch dry signal for chaos mix (pre-allocated in prepareToPlay)
     for (int ch = 0; ch < numChannels; ++ch)

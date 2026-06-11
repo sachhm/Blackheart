@@ -31,6 +31,9 @@ public:
     void reset();
 
     void process(int numSamples);
+    // Per-sample modulation: fills the three buffers (each numSamples long).
+    // Buffers must be pre-allocated by the caller (audio-thread safe).
+    void processToBuffers(float* pitchMod, float* grainMod, float* timingMod, int numSamples);
     ModulationOutput getModulation() const;
     float getNextModulationValue();
 

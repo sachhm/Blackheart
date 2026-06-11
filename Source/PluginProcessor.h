@@ -314,6 +314,11 @@ private:
     juce::AudioBuffer<float> stagingBuffer;
     juce::AudioBuffer<float> prePitchDryBuffer;
 
+    // Per-sample chaos modulation buffers (sized in prepareToPlay)
+    std::vector<float> pitchModBuffer;
+    std::vector<float> grainModBuffer;
+    std::vector<float> timingModBuffer;
+
     std::atomic<float> inputEnvelope { 0.0f };
     std::atomic<float> chaosEnvelope { 0.0f };
 
