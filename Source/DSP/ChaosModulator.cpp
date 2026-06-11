@@ -38,7 +38,7 @@ void ChaosModulator::prepare(const juce::dsp::ProcessSpec& spec)
     {
         noiseTable[static_cast<size_t>(i)] = deterministicRandom.nextFloat() * 2.0f - 1.0f;
     }
-    noiseTableIndex = 0;
+    noisePhase = 0.0f;
     noiseSmoothValue = 0.0f;
 
     currentOutput = ModulationOutput();
@@ -57,6 +57,7 @@ void ChaosModulator::reset()
     randomWalkValue = 0.0f;
     randomWalkTarget = 0.0f;
     randomWalkPhase = 0.0f;
+    noisePhase = 0.0f;
     noiseSmoothValue = 0.0f;
 
     rawEnvelopeValue = 0.0f;
@@ -157,11 +158,11 @@ float ChaosModulator::interpolateHermite(float y0, float y1, float y2, float y3,
     return ((c3 * t + c2) * t + c1) * t + c0;
 }
 
+// t is an unwrapped phase in [0, noiseTableSize)
 float ChaosModulator::generateSmoothNoise(float t)
 {
-    const float scaledT = t * 4.0f;
-    const int index = static_cast<int>(scaledT) % noiseTableSize;
-    const float frac = scaledT - std::floor(scaledT);
+    const int index = static_cast<int>(t) % noiseTableSize;
+    const float frac = t - std::floor(t);
 
     const int i0 = (index - 1 + noiseTableSize) % noiseTableSize;
     const int i1 = index;
@@ -263,10 +264,18 @@ float ChaosModulator::getNextModulationValue()
     randomWalkPhase += randomWalkRate / static_cast<float>(sampleRate);
     updateRandomWalk();
 
+    // Noise phase traverses 4 table entries per LFO cycle, never wraps at 1.0 —
+    // wrapping at the LFO period would only ever read 4 of 256 table slots
+    noisePhase += effectiveSpeed * 4.0f / static_cast<float>(sampleRate);
+    if (noisePhase >= static_cast<float>(noiseTableSize))
+        noisePhase -= static_cast<float>(noiseTableSize);
+    if (!std::isfinite(noisePhase))
+        noisePhase = 0.0f;
+
     // Use lookup table-based waveform generators
     const float sineValue = generateSineWave(lfoPhase);
     const float triangleValue = generateTriangleWave(lfoPhase);
-    const float smoothNoiseValue = generateSmoothNoise(lfoPhase);
+    const float smoothNoiseValue = generateSmoothNoise(noisePhase);
 
     const float chaosSquared = effectiveChaosAmount * effectiveChaosAmount;
 

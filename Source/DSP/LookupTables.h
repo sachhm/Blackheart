@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <cmath>
+#include <mutex>
 
 namespace DSP
 {
@@ -21,9 +22,9 @@ public:
     // Initialize all tables - call once at startup
     static void initialize()
     {
-        static bool initialized = false;
-        if (initialized) return;
-
+        static std::once_flag initFlag;
+        std::call_once(initFlag, []
+        {
         // Sine table: full period [0, 2π)
         for (int i = 0; i < tableSize; ++i)
         {
@@ -78,7 +79,7 @@ public:
             }
         }
 
-        initialized = true;
+        });
     }
 
     // Fast sine lookup with linear interpolation

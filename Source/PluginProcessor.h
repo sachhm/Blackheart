@@ -165,6 +165,7 @@ struct SmoothedParameters
         chaosMix.setTargetValue(chaosMixVal);
     }
 
+    // chaosMix excluded: consumed per-sample via getNextValue() in processBlock
     void skip(int numSamples)
     {
         gain.skip(numSamples);
@@ -178,7 +179,6 @@ struct SmoothedParameters
         octave2.skip(numSamples);
         shape.skip(numSamples);
         panic.skip(numSamples);
-        chaosMix.skip(numSamples);
     }
 
     bool isSmoothing() const
@@ -245,11 +245,11 @@ public:
     void setOctave1(bool active);
     void setOctave2(bool active);
 
-    float getInputEnvelope() const { return inputEnvelope; }
-    float getChaosEnvelope() const { return chaosEnvelope; }
+    float getInputEnvelope() const { return inputEnvelope.load(std::memory_order_relaxed); }
+    float getChaosEnvelope() const { return chaosEnvelope.load(std::memory_order_relaxed); }
 
-    void setTestMode(bool enabled) { testModeEnabled = enabled; }
-    bool isTestMode() const { return testModeEnabled; }
+    void setTestMode(bool enabled) { testModeEnabled.store(enabled, std::memory_order_relaxed); }
+    bool isTestMode() const { return testModeEnabled.load(std::memory_order_relaxed); }
 
     // Signal metering for gain staging verification
     const SignalMeters& getSignalMeters() const { return signalMeters; }
@@ -264,8 +264,8 @@ public:
     float getCpuLoad() const { return cpuLoad.load(std::memory_order_relaxed); }
 
     // Stability monitoring
-    bool isStable() const { return !stabilityError; }
-    void resetStabilityError() { stabilityError = false; }
+    bool isStable() const { return !stabilityError.load(std::memory_order_relaxed); }
+    void resetStabilityError() { stabilityError.store(false, std::memory_order_relaxed); }
 
     // Waveform visualization data (lock-free)
     static constexpr int waveformFifoSize = 2048;
@@ -326,24 +326,24 @@ private:
     juce::AudioBuffer<float> stagingBuffer;
     juce::AudioBuffer<float> prePitchDryBuffer;
 
-    float inputEnvelope = 0.0f;
-    float chaosEnvelope = 0.0f;
+    std::atomic<float> inputEnvelope { 0.0f };
+    std::atomic<float> chaosEnvelope { 0.0f };
 
     double currentSampleRate = 44100.0;
     std::atomic<float> cpuLoad { 0.0f };
     int currentBlockSize = 512;
-    bool isFirstBlock = true;
-    bool testModeEnabled = false;
+    std::atomic<bool> isFirstBlock { true };
+    std::atomic<bool> testModeEnabled { false };
 
     // Signal metering
     SignalMeters signalMeters;
 
     // Latency tracking
     int totalLatencySamples = 0;
-    int pitchShifterLatency = 64;
+    int pitchShifterLatency = 0;
 
     // Stability safeguards
-    bool stabilityError = false;
+    std::atomic<bool> stabilityError { false };
     int consecutiveHighLevelBlocks = 0;
     static constexpr int maxConsecutiveHighLevelBlocks = 10;
     static constexpr float internalClipThreshold = 4.0f;

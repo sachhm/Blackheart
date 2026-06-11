@@ -79,9 +79,10 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int channels = buffer.getNumChannels();
 
-    // Ensure octave buffer is large enough (no allocation if already sized)
+    // Buffer pre-allocated in prepare(); never allocate on the audio thread.
+    // Undersized means the host violated the prepare contract — pass through dry.
     if (octaveBuffer.getNumSamples() < numSamples || octaveBuffer.getNumChannels() < channels)
-        octaveBuffer.setSize(channels, numSamples, false, false, true);
+        return;
 
     // Copy input to octave buffer
     for (int ch = 0; ch < channels; ++ch)

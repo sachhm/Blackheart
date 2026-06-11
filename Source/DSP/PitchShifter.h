@@ -1,6 +1,9 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <array>
+#include <atomic>
+#include <vector>
 
 namespace DSP
 {
@@ -31,6 +34,7 @@ public:
     float getCurrentPitchRatio() const { return currentPitchRatio; }
     float getCurrentMix() const { return currentMix; }
     bool isTransitioning() const { return transitionActive; }
+    int getLatencySamples() const { return windowSizeSamples; }
 
 private:
     // Dual-head delay line (Whammy/Noise-style pitch shifting)
@@ -92,11 +96,12 @@ private:
 
     // Dual-head delay line
     static constexpr int maxChannels = 2;
-    static constexpr int delayBufferSize = 8192;
     static constexpr int numMainHeads = 2;
     static constexpr int numDetuneHeads = 2;  // For PANIC
 
-    std::array<std::array<float, delayBufferSize>, maxChannels> delayBuffer {};
+    // Sized in prepare(): >= 4x max window at current sample rate, power of two
+    int delayBufferSize = 8192;
+    std::array<std::vector<float>, maxChannels> delayBuffer;
     int writePosition = 0;
 
     std::array<DelayHead, numMainHeads> mainHeads;

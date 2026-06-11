@@ -49,10 +49,9 @@ void FuzzEngine::prepare(const juce::dsp::ProcessSpec& spec)
     sagAttackCoeff = std::exp(-1.0f / (static_cast<float>(oversampledRate) * 0.2f));
     sagReleaseCoeff = std::exp(-1.0f / (static_cast<float>(oversampledRate) * 0.5f));
 
-    compressionEnvelope = 0.0f;
-    sagEnvelope = 0.0f;
+    compressionEnvelope.fill(0.0f);
+    sagEnvelope.fill(0.0f);
     biasDriftPhase = 0.0f;
-    impedanceLPFCutoff = 8000.0f;
     lastShapeValue = -1.0f;
 
     configureFiltersForMode(currentMode);
@@ -75,8 +74,8 @@ void FuzzEngine::reset()
     shapeLowEQ.reset();
     dcBlocker.reset();
 
-    compressionEnvelope = 0.0f;
-    sagEnvelope = 0.0f;
+    compressionEnvelope.fill(0.0f);
+    sagEnvelope.fill(0.0f);
     biasDriftPhase = 0.0f;
     lastShapeValue = -1.0f;
 }
@@ -217,6 +216,8 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
         preEqShelf.process(ctx);
     }
 
+    const float biasDriftPhaseInc = 0.05f / static_cast<float>(oversampledRate); // 0.05 Hz LFO
+
     // Germanium gain stage — per-sample processing
     for (size_t sample = 0; sample < numSamples; ++sample)
     {
@@ -224,19 +225,15 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
         const float currentLevel = level.getNextValue();
         const float currentShapeVal = shape.getNextValue();
 
-        // Gain curve: gain^1.5 for germanium-style gradual onset
-        const float gainCurved = std::pow(currentGain, 1.5f);
+        // Gain curve: gain^1.5 == x*sqrt(x) — avoids std::pow in the hot loop
+        const float gainCurved = currentGain * std::sqrt(currentGain);
         const float baseDrive = minDrive + gainCurved * (maxDrive - minDrive);
         const float drive = baseDrive * modeDriveScale;
 
-        // Voltage sag: reduce clipping headroom under sustained signal
-        const float sagFactor = 1.0f - sagEnvelope * 0.3f;
-
         // Bias drift: slow LFO modulated by envelope
-        biasDriftPhase += 0.05f / static_cast<float>(oversampledRate);
+        biasDriftPhase += biasDriftPhaseInc;
         if (biasDriftPhase >= 1.0f) biasDriftPhase -= 1.0f;
-        const float biasDrift = LookupTables::fastSin(biasDriftPhase) *
-                                0.02f * (0.3f + compressionEnvelope * 0.7f);
+        const float biasDriftLfo = LookupTables::fastSin(biasDriftPhase) * 0.02f;
 
         // Update SHAPE EQ periodically (every 64 samples)
         if ((sample & 63) == 0 && std::abs(currentShapeVal - lastShapeValue) > 0.005f)
@@ -256,36 +253,41 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
             shapeLowEQ.setResonance(0.5f + currentShapeVal * 0.3f);
         }
 
-        for (size_t ch = 0; ch < numChannels; ++ch)
+        // Level: map 0-1 to -24..+24dB
+        const float levelDb = currentLevel * 48.0f - 24.0f;
+        const float levelGain = juce::Decibels::decibelsToGain(levelDb, -96.0f);
+        const float makeupGain = 1.0f / (1.0f + drive * 0.005f);
+
+        const size_t envChannels = std::min(numChannels, static_cast<size_t>(maxChannels));
+        for (size_t ch = 0; ch < envChannels; ++ch)
         {
             float* data = oversampledBlock.getChannelPointer(ch);
             float inputSample = data[sample];
 
-            // Input impedance interaction: LPF cutoff tracks input level
-            // (simulates pickup loading into low-Z germanium input)
             const float inputLevel = std::abs(inputSample);
-            impedanceLPFCutoff += 0.001f * (juce::jmap(inputLevel, 0.0f, 0.5f, 2000.0f, 8000.0f) - impedanceLPFCutoff);
 
-            // Envelope follower for compression
-            const float envCoeff = inputLevel > compressionEnvelope ? attackCoeff : releaseCoeff;
-            compressionEnvelope = compressionEnvelope * envCoeff + inputLevel * (1.0f - envCoeff);
+            // Envelope follower for compression (per channel)
+            const float envCoeff = inputLevel > compressionEnvelope[ch] ? attackCoeff : releaseCoeff;
+            compressionEnvelope[ch] = compressionEnvelope[ch] * envCoeff + inputLevel * (1.0f - envCoeff);
 
-            // Sag envelope (slower)
-            const float sagCoeff = inputLevel > sagEnvelope ? sagAttackCoeff : sagReleaseCoeff;
-            sagEnvelope = sagEnvelope * sagCoeff + inputLevel * (1.0f - sagCoeff);
+            // Sag envelope (slower, per channel)
+            const float sagCoeff = inputLevel > sagEnvelope[ch] ? sagAttackCoeff : sagReleaseCoeff;
+            sagEnvelope[ch] = sagEnvelope[ch] * sagCoeff + inputLevel * (1.0f - sagCoeff);
+
+            // Voltage sag: reduce clipping headroom under sustained signal
+            const float sagFactor = 1.0f - sagEnvelope[ch] * 0.3f;
 
             // Soft compression before clipping
             const float threshold = (0.3f + (1.0f - currentGain) * 0.5f) * sagFactor;
-            const float absLevel = std::abs(inputSample);
-            if (absLevel > threshold && absLevel > 0.0f)
+            if (inputLevel > threshold && inputLevel > 0.0f)
             {
                 constexpr float ratio = 4.0f;
-                const float compGain = (threshold + (absLevel - threshold) / ratio) / absLevel;
+                const float compGain = (threshold + (inputLevel - threshold) / ratio) / inputLevel;
                 inputSample *= compGain;
             }
 
-            // Add bias drift
-            inputSample += biasDrift;
+            // Add bias drift (depth follows this channel's envelope)
+            inputSample += biasDriftLfo * (0.3f + compressionEnvelope[ch] * 0.7f);
 
             // Germanium waveshaping
             float shaped = germaniumWaveshape(inputSample, drive, modeAsymmetry);
@@ -293,14 +295,14 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
             // Hard limit safety
             shaped = juce::jlimit(-0.95f, 0.95f, shaped);
 
-            // Makeup gain + level
-            const float makeupGain = 1.0f / (1.0f + drive * 0.005f);
+            float out = shaped * makeupGain * levelGain;
 
-            // Level: map 0-1 to -inf..+24dB
-            const float levelDb = currentLevel * 48.0f - 24.0f;  // 0->-24dB, 0.5->0dB, 1.0->+24dB
-            const float levelGain = juce::Decibels::decibelsToGain(levelDb, -96.0f);
+            // Bound output: +24dB level can push ~10x full scale otherwise
+            const float absOut = std::abs(out);
+            if (absOut > 2.0f)
+                out = (out > 0.0f ? 1.0f : -1.0f) * (2.0f + LookupTables::fastTanh(absOut - 2.0f));
 
-            data[sample] = shaped * makeupGain * levelGain;
+            data[sample] = out;
         }
     }
 

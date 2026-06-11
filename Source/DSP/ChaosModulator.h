@@ -37,6 +37,8 @@ public:
     void setSpeed(float normalizedSpeed);
     void setChaos(float normalizedChaos);
     void setEnvelopeValue(float envelopeLevel);
+    // NOT real-time safe: mutates noiseTable/random read by the audio thread.
+    // Only call while audio is stopped (e.g. from prepare).
     void setSeed(unsigned int seed);
 
     void setResponseCurve(ResponseCurve curve);
@@ -100,7 +102,7 @@ private:
 
     static constexpr int noiseTableSize = 256;
     std::array<float, noiseTableSize> noiseTable {};
-    int noiseTableIndex = 0;
+    float noisePhase = 0.0f;   // [0, noiseTableSize) — traverses full table
     float noiseSmoothValue = 0.0f;
 
     ModulationOutput currentOutput;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <array>
 
 namespace DSP
 {
@@ -71,11 +72,11 @@ private:
     // DC blocker (removes bias drift DC)
     juce::dsp::StateVariableTPTFilter<float> dcBlocker;
 
-    // Germanium emulation state
-    float compressionEnvelope = 0.0f;
-    float sagEnvelope = 0.0f;          // Voltage sag tracking
+    // Germanium emulation state (per channel — shared state corrupts stereo)
+    static constexpr int maxChannels = 2;
+    std::array<float, maxChannels> compressionEnvelope {};
+    std::array<float, maxChannels> sagEnvelope {};     // Voltage sag tracking
     float biasDriftPhase = 0.0f;       // Slow LFO for bias drift
-    float impedanceLPFCutoff = 8000.0f; // Input impedance interaction
 
     // Pre-calculated coefficients
     float attackCoeff = 0.0f;

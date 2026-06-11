@@ -282,7 +282,8 @@ void BlackheartAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
-    spec.numChannels = static_cast<juce::uint32>(getTotalNumOutputChannels());
+    spec.numChannels = static_cast<juce::uint32>(
+        std::max(getTotalNumInputChannels(), getTotalNumOutputChannels()));
 
     // Initialize parameter smoothing
     smoothedParams.prepare(sampleRate);
@@ -354,7 +355,7 @@ void BlackheartAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     // LATENCY CALCULATION
     //==========================================================================
 
-    pitchShifterLatency = static_cast<int>(0.030 * sampleRate); // 30ms grain size
+    pitchShifterLatency = pitchShifter.getLatencySamples();
     totalLatencySamples = pitchShifterLatency;
     setLatencySamples(totalLatencySamples);
 
@@ -571,7 +572,7 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
 
-    const auto cpuStart = std::chrono::high_resolution_clock::now();
+    const auto cpuStartTicks = juce::Time::getHighResolutionTicks();
 
     const auto totalNumInputChannels = getTotalNumInputChannels();
     const auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -583,12 +584,14 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
-    // Ensure buffers are properly sized
-    if (dryBuffer.getNumSamples() < numSamples || dryBuffer.getNumChannels() < numChannels)
-        dryBuffer.setSize(numChannels, numSamples, false, false, true);
-
-    if (stagingBuffer.getNumSamples() < numSamples || stagingBuffer.getNumChannels() < numChannels)
-        stagingBuffer.setSize(numChannels, numSamples, false, false, true);
+    // Host violated prepareToPlay contract — never allocate on audio thread
+    if (dryBuffer.getNumSamples() < numSamples || dryBuffer.getNumChannels() < numChannels
+        || stagingBuffer.getNumSamples() < numSamples || stagingBuffer.getNumChannels() < numChannels
+        || prePitchDryBuffer.getNumSamples() < numSamples || prePitchDryBuffer.getNumChannels() < numChannels)
+    {
+        buffer.clear();
+        return;
+    }
 
     //==========================================================================
     // PARAMETER FETCH AND SMOOTHING
@@ -613,6 +616,12 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic, currentChaosMix);
     }
 
+    // Advance smoothers to end-of-block targets BEFORE the DSP reads them —
+    // modules apply their own per-sample smoothing internally. Reading before
+    // skip() would add a full block of lag to every parameter change.
+    if (!testModeEnabled.load(std::memory_order_relaxed))
+        smoothedParams.skip(numSamples);
+
     updateDSPParameters();
 
     //==========================================================================
@@ -630,10 +639,11 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // TEST MODE: Early exit after input conditioning
     //==========================================================================
 
-    if (testModeEnabled)
+    if (testModeEnabled.load(std::memory_order_relaxed))
     {
         inputConditioner.process(buffer);
         smoothedParams.skip(numSamples);
+        smoothedParams.chaosMix.skip(numSamples);
         return;
     }
 
@@ -730,23 +740,30 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     pitchShifter.setGrainSizeModulation(chaosMod.grainSizeMod);
     pitchShifter.setTimingModulation(chaosMod.timingMod);
 
-    // Save pre-pitch dry signal for chaos mix (pre-allocated buffer, no audio-thread allocation)
-    if (prePitchDryBuffer.getNumSamples() < numSamples || prePitchDryBuffer.getNumChannels() < numChannels)
-        prePitchDryBuffer.setSize(numChannels, numSamples, false, false, true);
+    // Save pre-pitch dry signal for chaos mix (pre-allocated in prepareToPlay)
     for (int ch = 0; ch < numChannels; ++ch)
         prePitchDryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
 
     // Process pitch shifting
     pitchShifter.process(buffer);
 
-    // Apply chaos mix (dry/wet blend for pitch section)
-    const float smoothedChaosMix = smoothedParams.chaosMix.getCurrentValue();
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    // Apply chaos mix (dry/wet blend for pitch section), ramped per sample
     {
-        auto* wet = buffer.getWritePointer(ch);
-        const auto* dry = prePitchDryBuffer.getReadPointer(ch);
+        const int mixChannels = buffer.getNumChannels();
+        float* wetPtrs[8] = {};
+        const float* dryPtrs[8] = {};
+        const int clampedChannels = std::min(mixChannels, 8);
+        for (int ch = 0; ch < clampedChannels; ++ch)
+        {
+            wetPtrs[ch] = buffer.getWritePointer(ch);
+            dryPtrs[ch] = prePitchDryBuffer.getReadPointer(ch);
+        }
         for (int i = 0; i < numSamples; ++i)
-            wet[i] = dry[i] + smoothedChaosMix * (wet[i] - dry[i]);
+        {
+            const float mix = smoothedParams.chaosMix.getNextValue();
+            for (int ch = 0; ch < clampedChannels; ++ch)
+                wetPtrs[ch][i] = dryPtrs[ch][i] + mix * (wetPtrs[ch][i] - dryPtrs[ch][i]);
+        }
     }
 
     float postPitchLevel = measurePeakLevel(buffer);
@@ -771,12 +788,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (buffer.getNumChannels() > 0)
         waveformFifo.pushBlock(buffer.getReadPointer(0), numSamples);
 
-    //==========================================================================
-    // FINAL: Advance parameter smoothing
-    //==========================================================================
-
-    smoothedParams.skip(numSamples);
-
     // Safety check: if we've had too many consecutive high-level blocks, apply gradual reduction
     // instead of sudden halving which causes audible volume drops
     if (consecutiveHighLevelBlocks > maxConsecutiveHighLevelBlocks)
@@ -789,8 +800,8 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     // CPU load: elapsed processing time / block duration. EMA smoothed.
     {
-        const auto cpuEnd = std::chrono::high_resolution_clock::now();
-        const double elapsedSec = std::chrono::duration<double>(cpuEnd - cpuStart).count();
+        const auto cpuEndTicks = juce::Time::getHighResolutionTicks();
+        const double elapsedSec = juce::Time::highResolutionTicksToSeconds(cpuEndTicks - cpuStartTicks);
         const double blockSec = currentSampleRate > 0.0
             ? static_cast<double>(numSamples) / currentSampleRate
             : 0.0;

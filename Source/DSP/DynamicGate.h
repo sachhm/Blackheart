@@ -45,6 +45,7 @@ private:
     float glareInfluence = 0.3f;
 
     float lastGateGain = 1.0f;
+    float lastGlareRelease = -1.0f;
 
     static constexpr float kneeWidth = 0.15f;
     static constexpr float hysteresisDb = 3.0f;

@@ -43,9 +43,14 @@ void DynamicGate::process(juce::AudioBuffer<float>& buffer)
     hysteresisThresholdHigh = dynamicThreshold;
     hysteresisThresholdLow = dynamicThreshold * juce::Decibels::decibelsToGain(-hysteresisDb);
 
-    // Glare-dependent release: faster at high glare for spitty texture
-    const float glareRelease = 80.0f - glareInfluence * 50.0f;  // 80ms → 30ms
-    envelopeFollower.setReleaseTime(std::max(20.0f, glareRelease));
+    // Glare-dependent release: faster at high glare for spitty texture.
+    // Only recompute coefficients (std::exp) when the value actually changes.
+    const float glareRelease = std::max(20.0f, 80.0f - glareInfluence * 50.0f);  // 80ms → 30ms
+    if (std::abs(glareRelease - lastGlareRelease) > 0.01f)
+    {
+        envelopeFollower.setReleaseTime(glareRelease);
+        lastGlareRelease = glareRelease;
+    }
 
     for (int sample = 0; sample < numSamples; ++sample)
     {

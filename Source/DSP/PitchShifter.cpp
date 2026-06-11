@@ -18,14 +18,17 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     chaos.reset(sampleRate, 0.02);
     panic.reset(sampleRate, 0.02);
 
+    // Buffer must hold >= 4x the max window at this sample rate
+    const int maxWindowSamples = static_cast<int>(maxWindowMs * 0.001 * sampleRate);
+    delayBufferSize = juce::nextPowerOfTwo(std::max(8192, maxWindowSamples * 4));
+
     windowSizeSamples = static_cast<int>(defaultWindowMs * 0.001 * sampleRate);
     windowSizeSamples = juce::jlimit(256, delayBufferSize / 4, windowSizeSamples);
 
     setRiseTime(riseTimeMs);
 
     for (int ch = 0; ch < maxChannels; ++ch)
-        for (int i = 0; i < delayBufferSize; ++i)
-            delayBuffer[ch][i] = 0.0f;
+        delayBuffer[ch].assign(static_cast<size_t>(delayBufferSize), 0.0f);
 
     writePosition = 0;
 
@@ -61,8 +64,7 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
 void PitchShifter::reset()
 {
     for (int ch = 0; ch < maxChannels; ++ch)
-        for (int i = 0; i < delayBufferSize; ++i)
-            delayBuffer[ch][i] = 0.0f;
+        std::fill(delayBuffer[ch].begin(), delayBuffer[ch].end(), 0.0f);
 
     writePosition = 0;
 
@@ -88,13 +90,14 @@ float PitchShifter::readFromBuffer(int channel, float position) const
 {
     channel = juce::jlimit(0, maxChannels - 1, channel);
 
-    // Wrap position to buffer size
-    const float bufSize = static_cast<float>(delayBufferSize);
-    while (position < 0.0f) position += bufSize;
-    while (position >= bufSize) position -= bufSize;
-
+    // NaN/Inf must be rejected BEFORE the wrap loops — they never terminate on NaN
     if (!std::isfinite(position))
         return 0.0f;
+
+    // Wrap position to buffer size
+    const float bufSize = static_cast<float>(delayBufferSize);
+    position -= bufSize * std::floor(position / bufSize);
+    if (position >= bufSize) position = 0.0f;
 
     // 4-point Hermite cubic interpolation
     const int idx0 = static_cast<int>(position);
@@ -295,7 +298,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             // Ring modulation (post-pitch, pre-mix)
             if (ringModMix > 0.001f)
             {
-                const float ringModSine = std::sin(ringModPhase * juce::MathConstants<float>::twoPi);
+                const float ringModSine = LookupTables::fastSin(ringModPhase);
                 wetOutput = wetOutput * (1.0f - ringModMix) + wetOutput * ringModSine * ringModMix;
             }
 
@@ -345,10 +348,11 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             while (mainHeads[h].readPosition < 0.0f)
                 mainHeads[h].readPosition += bufSize;
 
-            // When ramp completes, reset head back near the write position
-            if (mainHeads[h].ramp >= 1.0f)
+            // When ramp completes (either direction — rampInc is negative when
+            // modulatedPitch < 1), reset head back near the write position
+            if (mainHeads[h].ramp >= 1.0f || mainHeads[h].ramp < 0.0f)
             {
-                mainHeads[h].ramp -= 1.0f;
+                mainHeads[h].ramp -= std::floor(mainHeads[h].ramp);
                 float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
                 resetPos += resetJitter * (random.nextFloat() * 2.0f - 1.0f);
                 while (resetPos < 0.0f) resetPos += bufSize;
@@ -367,9 +371,9 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             detuneHeads[0].readPosition += modulatedPitch * detuneUp;
             while (detuneHeads[0].readPosition >= bufSize) detuneHeads[0].readPosition -= bufSize;
             while (detuneHeads[0].readPosition < 0.0f) detuneHeads[0].readPosition += bufSize;
-            if (detuneHeads[0].ramp >= 1.0f)
+            if (detuneHeads[0].ramp >= 1.0f || detuneHeads[0].ramp < 0.0f)
             {
-                detuneHeads[0].ramp -= 1.0f;
+                detuneHeads[0].ramp -= std::floor(detuneHeads[0].ramp);
                 float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
                 while (resetPos < 0.0f) resetPos += bufSize;
                 detuneHeads[0].readPosition = resetPos;
@@ -379,9 +383,9 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             detuneHeads[1].readPosition += modulatedPitch * detuneDown;
             while (detuneHeads[1].readPosition >= bufSize) detuneHeads[1].readPosition -= bufSize;
             while (detuneHeads[1].readPosition < 0.0f) detuneHeads[1].readPosition += bufSize;
-            if (detuneHeads[1].ramp >= 1.0f)
+            if (detuneHeads[1].ramp >= 1.0f || detuneHeads[1].ramp < 0.0f)
             {
-                detuneHeads[1].ramp -= 1.0f;
+                detuneHeads[1].ramp -= std::floor(detuneHeads[1].ramp);
                 float resetPos = static_cast<float>(writePosition) - static_cast<float>(modWindowSize);
                 while (resetPos < 0.0f) resetPos += bufSize;
                 detuneHeads[1].readPosition = resetPos;
