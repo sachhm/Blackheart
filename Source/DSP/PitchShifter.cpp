@@ -51,8 +51,8 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     ringModFreq = 0.0f;
     ringModMix = 0.0f;
     panicAmount = 0.0f;
-    dryEnvelope = 0.0f;
-    wetEnvelope = 0.0f;
+    dryEnvelope.fill(0.0f);
+    wetEnvelope.fill(0.0f);
     transitionActive = false;
 
     prevOctaveOneActive = false;
@@ -78,8 +78,8 @@ void PitchShifter::reset()
     currentMix = 0.0f;
     feedbackSample = 0.0f;
     ringModPhase = 0.0f;
-    dryEnvelope = 0.0f;
-    wetEnvelope = 0.0f;
+    dryEnvelope.fill(0.0f);
+    wetEnvelope.fill(0.0f);
     transitionActive = false;
 
     prevOctaveOneActive = false;
@@ -179,6 +179,10 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
 
     const float bufSize = static_cast<float>(delayBufferSize);
 
+    float* channelData[maxChannels] = {};
+    for (int ch = 0; ch < processChannels; ++ch)
+        channelData[ch] = buffer.getWritePointer(ch);
+
     for (int sample = 0; sample < numSamples; ++sample)
     {
         const float chaosVal = chaos.getNextValue();
@@ -187,7 +191,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
         // Write input to delay buffer with feedback
         for (int ch = 0; ch < processChannels; ++ch)
         {
-            float inputSample = buffer.getSample(ch, sample);
+            float inputSample = channelData[ch][sample];
             if (!std::isfinite(inputSample)) inputSample = 0.0f;
 
             const float feedbackAmount = chaosVal * 0.4f;
@@ -245,7 +249,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
 
         for (int ch = 0; ch < processChannels; ++ch)
         {
-            const float dryInput = buffer.getSample(ch, sample);
+            const float dryInput = channelData[ch][sample];
             float wetSum = 0.0f;
 
             // Process main heads
@@ -302,20 +306,20 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 wetOutput = wetOutput * (1.0f - ringModMix) + wetOutput * ringModSine * ringModMix;
             }
 
-            // Gain compensation: match wet level to dry level
+            // Gain compensation: match wet level to dry level (per channel)
             {
                 const float dryAbs = std::abs(dryInput);
                 const float wetAbs = std::abs(wetOutput);
 
-                const float dryCoeff = (dryAbs > dryEnvelope) ? envelopeAttack : envelopeRelease;
-                dryEnvelope += dryCoeff * (dryAbs - dryEnvelope);
+                const float dryCoeff = (dryAbs > dryEnvelope[ch]) ? envelopeAttack : envelopeRelease;
+                dryEnvelope[ch] += dryCoeff * (dryAbs - dryEnvelope[ch]);
 
-                const float wetCoeff = (wetAbs > wetEnvelope) ? envelopeAttack : envelopeRelease;
-                wetEnvelope += wetCoeff * (wetAbs - wetEnvelope);
+                const float wetCoeff = (wetAbs > wetEnvelope[ch]) ? envelopeAttack : envelopeRelease;
+                wetEnvelope[ch] += wetCoeff * (wetAbs - wetEnvelope[ch]);
 
-                if (wetEnvelope > 0.0001f && dryEnvelope > 0.0001f)
+                if (wetEnvelope[ch] > 0.0001f && dryEnvelope[ch] > 0.0001f)
                 {
-                    const float gainComp = dryEnvelope / wetEnvelope;
+                    const float gainComp = dryEnvelope[ch] / wetEnvelope[ch];
                     wetOutput *= juce::jlimit(0.5f, 4.0f, gainComp);
                 }
                 else if (wetAbs < 0.0001f && dryAbs > 0.001f)
@@ -329,7 +333,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             if (!std::isfinite(finalOutput))
                 finalOutput = dryInput;
 
-            buffer.setSample(ch, sample, finalOutput);
+            channelData[ch][sample] = finalOutput;
             wetSumMono += wetOutput;
         }
 

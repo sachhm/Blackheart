@@ -79,8 +79,11 @@ private:
     DetectionMode detectionMode = DetectionMode::Peak;
 
     float rmsSum = 0.0f;
-    static constexpr int rmsWindowSize = 64;
-    std::array<float, rmsWindowSize> rmsBuffer {};
+    // ~1.45ms integration window (64 samples @ 44.1k), converted in prepare()
+    static constexpr float rmsWindowMs = 1.45f;
+    static constexpr int maxRmsWindowSize = 512;  // covers up to 192kHz+
+    int rmsWindowSize = 64;
+    std::array<float, maxRmsWindowSize> rmsBuffer {};
     int rmsIndex = 0;
 
     float holdTimeMs = 0.0f;

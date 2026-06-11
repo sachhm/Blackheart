@@ -92,13 +92,17 @@ private:
     float sampleAndHoldTarget = 0.0f;
     float sampleAndHoldPhase = 0.0f;
     float sampleAndHoldSmoothed = 0.0f;
-    static constexpr float sampleAndHoldSmoothCoeff = 0.995f;
-    float dynamicSHSmoothCoeff = sampleAndHoldSmoothCoeff;
+    // Time constants (ms) match legacy 0.995/0.999 coeffs at 44.1kHz;
+    // coefficients derived in prepare() so smoothing is sample-rate invariant
+    static constexpr float shSmoothMs = 4.5f;
+    static constexpr float randomWalkSmoothMs = 22.6f;
+    float sampleAndHoldSmoothCoeff = 0.995f;
+    float dynamicSHSmoothCoeff = 0.995f;
 
     float randomWalkValue = 0.0f;
     float randomWalkTarget = 0.0f;
     float randomWalkPhase = 0.0f;
-    static constexpr float randomWalkSmoothCoeff = 0.999f;
+    float randomWalkSmoothCoeff = 0.999f;
 
     static constexpr int noiseTableSize = 256;
     std::array<float, noiseTableSize> noiseTable {};

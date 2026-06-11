@@ -88,9 +88,9 @@ private:
     // Feedback
     float feedbackSample = 0.0f;
 
-    // Gain compensation envelopes
-    float dryEnvelope = 0.0f;
-    float wetEnvelope = 0.0f;
+    // Gain compensation envelopes (per channel — shared state skews stereo)
+    std::array<float, 2> dryEnvelope {};
+    std::array<float, 2> wetEnvelope {};
     static constexpr float envelopeAttack = 0.01f;
     static constexpr float envelopeRelease = 0.001f;
 

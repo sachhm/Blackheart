@@ -52,13 +52,16 @@ void DynamicGate::process(juce::AudioBuffer<float>& buffer)
         lastGlareRelease = glareRelease;
     }
 
+    float* channelData[8] = {};
+    const int clampedChannels = std::min(numChannels, 8);
+    for (int ch = 0; ch < clampedChannels; ++ch)
+        channelData[ch] = buffer.getWritePointer(ch);
+
     for (int sample = 0; sample < numSamples; ++sample)
     {
         float maxLevel = 0.0f;
-        for (int channel = 0; channel < numChannels; ++channel)
-        {
-            maxLevel = std::max(maxLevel, std::abs(buffer.getSample(channel, sample)));
-        }
+        for (int channel = 0; channel < clampedChannels; ++channel)
+            maxLevel = std::max(maxLevel, std::abs(channelData[channel][sample]));
 
         const float envelope = envelopeFollower.processSample(maxLevel);
 
@@ -78,11 +81,8 @@ void DynamicGate::process(juce::AudioBuffer<float>& buffer)
         gateGain.setTargetValue(targetGain);
         const float smoothedGain = gateGain.getNextValue();
 
-        for (int channel = 0; channel < numChannels; ++channel)
-        {
-            const float inputSample = buffer.getSample(channel, sample);
-            buffer.setSample(channel, sample, inputSample * smoothedGain);
-        }
+        for (int channel = 0; channel < clampedChannels; ++channel)
+            channelData[channel][sample] *= smoothedGain;
 
         lastGateGain = smoothedGain;
     }

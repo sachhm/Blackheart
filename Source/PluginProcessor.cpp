@@ -661,9 +661,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     inputConditioner.process(buffer);
 
-    float postConditionerLevel = measurePeakLevel(buffer);
-    signalMeters.postConditionerLevel.store(postConditionerLevel);
-
     //==========================================================================
     // STAGE 3: FUZZ ENGINE
     // - Nonlinear waveshaping, compression, saturation
@@ -671,9 +668,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     //==========================================================================
 
     fuzzEngine.process(buffer);
-
-    float postFuzzLevel = measurePeakLevel(buffer);
-    signalMeters.postFuzzLevel.store(postFuzzLevel);
 
     // Interstage protection after fuzz (high gain can cause extreme levels)
     applyInterstageProtection(buffer);
@@ -686,9 +680,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     octaveGenerator.process(buffer);
 
-    float postOctaveLevel = measurePeakLevel(buffer);
-    signalMeters.postOctaveLevel.store(postOctaveLevel);
-
     // Interstage protection after octave (rectification can increase level)
     applyInterstageProtection(buffer);
 
@@ -699,9 +690,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     //==========================================================================
 
     dynamicGate.process(buffer);
-
-    float postGateLevel = measurePeakLevel(buffer);
-    signalMeters.postGateLevel.store(postGateLevel);
 
     //==========================================================================
     // STAGE 6: BLEND MIXER
@@ -714,9 +702,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         stagingBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
 
     blendMixer.process(dryBuffer, stagingBuffer, buffer);
-
-    float postBlendLevel = measurePeakLevel(buffer);
-    signalMeters.postBlendLevel.store(postBlendLevel);
 
     //==========================================================================
     // STAGE 7: CHAOS MODULATOR + PITCH SHIFTER
@@ -765,9 +750,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                 wetPtrs[ch][i] = dryPtrs[ch][i] + mix * (wetPtrs[ch][i] - dryPtrs[ch][i]);
         }
     }
-
-    float postPitchLevel = measurePeakLevel(buffer);
-    signalMeters.postPitchLevel.store(postPitchLevel);
 
     // Interstage protection before output
     applyInterstageProtection(buffer);

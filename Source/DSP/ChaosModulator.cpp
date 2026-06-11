@@ -17,6 +17,10 @@ void ChaosModulator::prepare(const juce::dsp::ProcessSpec& spec)
     setEnvelopeAttack(defaultAttackMs);
     setEnvelopeRelease(defaultReleaseMs);
 
+    sampleAndHoldSmoothCoeff = std::exp(-1.0f / (static_cast<float>(sampleRate) * shSmoothMs * 0.001f));
+    dynamicSHSmoothCoeff = sampleAndHoldSmoothCoeff;
+    randomWalkSmoothCoeff = std::exp(-1.0f / (static_cast<float>(sampleRate) * randomWalkSmoothMs * 0.001f));
+
     lfoPhase = 0.0f;
     lfoPhaseIncrement = 2.0f / static_cast<float>(sampleRate);
 

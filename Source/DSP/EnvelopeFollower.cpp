@@ -9,6 +9,9 @@ void EnvelopeFollower::prepare(const juce::dsp::ProcessSpec& spec)
 
     updateCoefficients();
 
+    rmsWindowSize = juce::jlimit(16, maxRmsWindowSize,
+                                 static_cast<int>(rmsWindowMs * 0.001f * static_cast<float>(sampleRate)));
+
     envelope = 0.0f;
     rmsSum = 0.0f;
     rmsIndex = 0;
@@ -144,6 +147,9 @@ float EnvelopeFollower::processBlockRMS(const juce::AudioBuffer<float>& buffer)
 {
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
+
+    if (numSamples == 0 || numChannels == 0)
+        return envelope;
 
     float sumSquared = 0.0f;
 

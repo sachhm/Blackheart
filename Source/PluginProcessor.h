@@ -70,12 +70,6 @@ private:
 struct SignalMeters
 {
     std::atomic<float> inputLevel { 0.0f };
-    std::atomic<float> postConditionerLevel { 0.0f };
-    std::atomic<float> postFuzzLevel { 0.0f };
-    std::atomic<float> postOctaveLevel { 0.0f };
-    std::atomic<float> postGateLevel { 0.0f };
-    std::atomic<float> postBlendLevel { 0.0f };
-    std::atomic<float> postPitchLevel { 0.0f };
     std::atomic<float> outputLevel { 0.0f };
 
     std::atomic<bool> inputClipping { false };
@@ -85,12 +79,6 @@ struct SignalMeters
     void reset()
     {
         inputLevel.store(0.0f);
-        postConditionerLevel.store(0.0f);
-        postFuzzLevel.store(0.0f);
-        postOctaveLevel.store(0.0f);
-        postGateLevel.store(0.0f);
-        postBlendLevel.store(0.0f);
-        postPitchLevel.store(0.0f);
         outputLevel.store(0.0f);
         inputClipping.store(false);
         internalClipping.store(false);
