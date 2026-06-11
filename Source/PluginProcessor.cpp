@@ -446,8 +446,10 @@ void BlackheartAudioProcessor::applyInterstageProtection(juce::AudioBuffer<float
                 {
                     const float sign = sample > 0.0f ? 1.0f : -1.0f;
                     const float excess = absSample - internalClipThreshold;
-                    // Soft saturation curve
-                    data[i] = sign * (internalClipThreshold + std::tanh(excess * 0.3f) * 2.0f);
+                    // Same curve as the moderate branch (caps at threshold+1) —
+                    // the old tanh(x*0.3)*2 variant capped HIGHER (threshold+2)
+                    // exactly when levels were most extreme
+                    data[i] = sign * (internalClipThreshold + std::tanh(excess * 0.5f));
                 }
             }
         }
@@ -514,14 +516,17 @@ void BlackheartAudioProcessor::fetchParameterValues()
 
 void BlackheartAudioProcessor::updateDSPParameters()
 {
-    const float smoothedGain   = smoothedParams.gain.getCurrentValue();
-    const float smoothedGlare  = smoothedParams.glare.getCurrentValue();
-    const float smoothedBlend  = smoothedParams.blend.getCurrentValue();
-    const float smoothedLevel  = smoothedParams.level.getCurrentValue();
-    const float smoothedSpeed  = smoothedParams.speed.getCurrentValue();
-    const float smoothedChaos  = smoothedParams.chaos.getCurrentValue();
-    const float smoothedRise   = smoothedParams.rise.getCurrentValue();
-    const float smoothedShape = smoothedParams.shape.getCurrentValue();
+    // Raw block-rate values: every consumer below runs its own per-sample
+    // SmoothedValue, so an outer smoothing layer only added a skipped-to-target
+    // snapshot on top of the real ramp (double smoothing, no benefit)
+    const float smoothedGain   = currentGain;
+    const float smoothedGlare  = currentGlare;
+    const float smoothedBlend  = currentBlend;
+    const float smoothedLevel  = currentLevel;
+    const float smoothedSpeed  = currentSpeed;
+    const float smoothedChaos  = currentChaos;
+    const float smoothedRise   = currentRise;
+    const float smoothedShape  = currentShape;
     // Note: octave1/octave2 SmoothedValues intentionally not read here.
     // Octave buttons use raw booleans (currentOctave1/2) for instant response.
 
@@ -548,7 +553,7 @@ void BlackheartAudioProcessor::updateDSPParameters()
     pitchShifter.setOctaveTwoActive(currentOctave2);
     pitchShifter.setRiseTime(smoothedRise);
     pitchShifter.setChaosAmount(smoothedChaos);
-    pitchShifter.setPanic(smoothedParams.panic.getCurrentValue());
+    pitchShifter.setPanic(currentPanic);
     pitchShifter.setRingModSpeed(smoothedSpeed);
 
     // Chaos Modulator parameters
@@ -621,12 +626,8 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             currentSpeed, currentChaos, currentRise, oct1Float, oct2Float, currentShape, currentPanic, currentChaosMix);
     }
 
-    // Advance smoothers to end-of-block targets BEFORE the DSP reads them —
-    // modules apply their own per-sample smoothing internally. Reading before
-    // skip() would add a full block of lag to every parameter change.
-    if (!testModeEnabled.load(std::memory_order_relaxed))
-        smoothedParams.skip(numSamples);
-
+    // Module parameters are smoothed inside each DSP class; only chaosMix is
+    // consumed per-sample from smoothedParams (in the chaos mix loop below)
     updateDSPParameters();
 
     //==========================================================================
@@ -647,24 +648,31 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (testModeEnabled.load(std::memory_order_relaxed))
     {
         inputConditioner.process(buffer);
-        smoothedParams.skip(numSamples);
         smoothedParams.chaosMix.skip(numSamples);
         return;
     }
 
     //==========================================================================
-    // STAGE 1: PRESERVE DRY SIGNAL FOR BLEND
+    // STAGE 1: INPUT CONDITIONING
+    // - DC blocking, anti-aliasing, level normalization
+    //==========================================================================
+
+    inputConditioner.process(buffer);
+
+    //==========================================================================
+    // STAGE 2: PRESERVE DRY SIGNAL FOR BLEND
+    // Captured AFTER conditioning: blending a raw (DC-laden, unfiltered) dry
+    // path against a conditioned wet path beats and skews the mix
     //==========================================================================
 
     for (int ch = 0; ch < numChannels; ++ch)
         dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
 
-    //==========================================================================
-    // STAGE 2: INPUT CONDITIONING
-    // - DC blocking, anti-aliasing, level normalization
-    //==========================================================================
-
-    inputConditioner.process(buffer);
+    // Track chaos envelope from the conditioned, pre-fuzz signal — post-blend
+    // the fuzz has compressed dynamics flat, leaving envelope-responsive chaos
+    // with nothing to respond to at high gain
+    chaosEnvelope = chaosEnvelopeFollower.processBlock(buffer);
+    chaosModulator.setEnvelopeValue(chaosEnvelope);
 
     //==========================================================================
     // STAGE 3: FUZZ ENGINE
@@ -674,9 +682,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     fuzzEngine.process(buffer);
 
-    // Interstage protection after fuzz (high gain can cause extreme levels)
-    applyInterstageProtection(buffer);
-
     //==========================================================================
     // STAGE 4: OCTAVE GENERATOR
     // - Full-wave rectification for octave-up harmonics
@@ -685,7 +690,9 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     octaveGenerator.process(buffer);
 
-    // Interstage protection after octave (rectification can increase level)
+    // Single interstage protection point: fuzz output is self-bounded (1.2x)
+    // and the octave contribution is capped, so post-octave is the only spot
+    // where summed level can still exceed the internal budget
     applyInterstageProtection(buffer);
 
     //==========================================================================
@@ -713,10 +720,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // - Envelope-responsive modulation system
     // - Granular pitch shifting with +1/+2 octave modes
     //==========================================================================
-
-    // Track post-blend envelope for chaos modulation
-    chaosEnvelope = chaosEnvelopeFollower.processBlock(buffer);
-    chaosModulator.setEnvelopeValue(chaosEnvelope);
 
     // Generate per-sample modulation into pre-allocated buffers — the pitch
     // shifter reads these per sample (block-rate consumption aliased the LFO)
@@ -752,9 +755,6 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                 wetPtrs[ch][i] = dryPtrs[ch][i] + mix * (wetPtrs[ch][i] - dryPtrs[ch][i]);
         }
     }
-
-    // Interstage protection before output
-    applyInterstageProtection(buffer);
 
     //==========================================================================
     // STAGE 8: OUTPUT LIMITER
