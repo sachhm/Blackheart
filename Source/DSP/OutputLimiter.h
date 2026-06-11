@@ -24,13 +24,14 @@ public:
     float getGainReduction() const { return lastGainReduction; }
 
 private:
-    float softClip(float sample) const;
     float processSaturation(float sample, float drive) const;
 
     double sampleRate = 44100.0;
     int maxBlockSize = 512;
 
-    juce::SmoothedValue<float> outputLevel { 0.7f };
+    // Unity by default — the old 0.7 default was a hidden, uncontrollable -3dB
+    // haircut since nothing in the processor ever calls setOutputLevel()
+    juce::SmoothedValue<float> outputLevel { 1.0f };
     juce::SmoothedValue<float> gainReduction { 1.0f };
 
     float ceiling = 0.95f;

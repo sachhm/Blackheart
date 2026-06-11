@@ -114,7 +114,10 @@ float EnvelopeFollower::processPeakHold(float inputLevel)
     }
     else
     {
-        peakHeldValue = releaseCoeff * peakHeldValue;
+        // Track the input directly once hold expires — self-decaying here AND
+        // releasing through the envelope below stacked two release curves,
+        // making the effective release much longer than configured
+        peakHeldValue = inputLevel;
     }
 
     if (peakHeldValue > envelope)
@@ -139,37 +142,6 @@ float EnvelopeFollower::processBlock(const juce::AudioBuffer<float>& buffer)
         }
         processSample(maxLevel);
     }
-
-    return envelope;
-}
-
-float EnvelopeFollower::processBlockRMS(const juce::AudioBuffer<float>& buffer)
-{
-    const int numSamples = buffer.getNumSamples();
-    const int numChannels = buffer.getNumChannels();
-
-    if (numSamples == 0 || numChannels == 0)
-        return envelope;
-
-    float sumSquared = 0.0f;
-
-    for (int sample = 0; sample < numSamples; ++sample)
-    {
-        float sampleSum = 0.0f;
-        for (int channel = 0; channel < numChannels; ++channel)
-        {
-            const float s = buffer.getSample(channel, sample);
-            sampleSum += s * s;
-        }
-        sumSquared += sampleSum / static_cast<float>(numChannels);
-    }
-
-    const float blockRMS = std::sqrt(sumSquared / static_cast<float>(numSamples));
-
-    if (blockRMS > envelope)
-        envelope = attackCoeff * envelope + (1.0f - attackCoeff) * blockRMS;
-    else
-        envelope = releaseCoeff * envelope + (1.0f - releaseCoeff) * blockRMS;
 
     return envelope;
 }

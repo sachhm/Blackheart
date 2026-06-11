@@ -37,12 +37,6 @@ void OutputLimiter::reset()
     dcBlockFilter.reset();
 }
 
-float OutputLimiter::softClip(float sample) const
-{
-    // Use fast polynomial tanh approximation
-    return LookupTables::fastTanhPoly(sample);
-}
-
 float OutputLimiter::processSaturation(float sample, float drive) const
 {
     const float absInput = std::abs(sample);
@@ -102,11 +96,16 @@ void OutputLimiter::process(juce::AudioBuffer<float>& buffer)
             const float coeff = maxAbsLevel > envelope ? attackCoeff : releaseCoeff;
             envelope = envelope * coeff + maxAbsLevel * (1.0f - coeff);
 
+            // Detect from the louder of smoothed envelope and instantaneous peak:
+            // the envelope alone lags transients by its attack time, letting
+            // full-amplitude peaks through with no reduction
+            const float detectLevel = std::max(envelope, maxAbsLevel);
+
             float targetGainReduction = 1.0f;
 
-            if (envelope > headroom)
+            if (detectLevel > headroom)
             {
-                const float overHeadroom = envelope - headroom;
+                const float overHeadroom = detectLevel - headroom;
                 const float maxOver = ceiling - headroom;
 
                 if (maxOver > 0.0f)
@@ -116,13 +115,15 @@ void OutputLimiter::process(juce::AudioBuffer<float>& buffer)
                 }
             }
 
-            if (envelope > ceiling)
+            if (detectLevel > ceiling)
             {
-                targetGainReduction = ceiling / envelope;
+                targetGainReduction = ceiling / detectLevel;
             }
 
             gainReduction.setTargetValue(targetGainReduction);
-            const float currentGainReduction = gainReduction.getNextValue();
+            // Instant attack, smoothed release: reductions apply immediately
+            // (true peak limiting), recoveries ride the 5ms smoother
+            const float currentGainReduction = std::min(gainReduction.getNextValue(), targetGainReduction);
             lastGainReduction = 1.0f - currentGainReduction;
 
             for (int channel = 0; channel < numChannels; ++channel)
@@ -154,11 +155,16 @@ void OutputLimiter::process(juce::AudioBuffer<float>& buffer)
             const float coeff = maxAbsLevel > envelope ? attackCoeff : releaseCoeff;
             envelope = envelope * coeff + maxAbsLevel * (1.0f - coeff);
 
+            // Detect from the louder of smoothed envelope and instantaneous peak:
+            // the envelope alone lags transients by its attack time, letting
+            // full-amplitude peaks through with no reduction
+            const float detectLevel = std::max(envelope, maxAbsLevel);
+
             float targetGainReduction = 1.0f;
 
-            if (envelope > headroom)
+            if (detectLevel > headroom)
             {
-                const float overHeadroom = envelope - headroom;
+                const float overHeadroom = detectLevel - headroom;
                 const float maxOver = ceiling - headroom;
 
                 if (maxOver > 0.0f)
@@ -168,13 +174,15 @@ void OutputLimiter::process(juce::AudioBuffer<float>& buffer)
                 }
             }
 
-            if (envelope > ceiling)
+            if (detectLevel > ceiling)
             {
-                targetGainReduction = ceiling / envelope;
+                targetGainReduction = ceiling / detectLevel;
             }
 
             gainReduction.setTargetValue(targetGainReduction);
-            const float currentGainReduction = gainReduction.getNextValue();
+            // Instant attack, smoothed release: reductions apply immediately
+            // (true peak limiting), recoveries ride the 5ms smoother
+            const float currentGainReduction = std::min(gainReduction.getNextValue(), targetGainReduction);
             lastGainReduction = 1.0f - currentGainReduction;
 
             for (int channel = 0; channel < numChannels; ++channel)
@@ -191,7 +199,7 @@ void OutputLimiter::process(juce::AudioBuffer<float>& buffer)
 
 void OutputLimiter::setOutputLevel(float normalizedLevel)
 {
-    outputLevel.setTargetValue(juce::jlimit(0.0f, 1.5f, normalizedLevel));
+    outputLevel.setTargetValue(juce::jlimit(0.0f, 1.0f, normalizedLevel));
 }
 
 void OutputLimiter::setCeiling(float ceilingDb)

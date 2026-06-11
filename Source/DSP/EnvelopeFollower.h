@@ -46,8 +46,6 @@ public:
 
     float processBlock(const juce::AudioBuffer<float>& buffer);
 
-    float processBlockRMS(const juce::AudioBuffer<float>& buffer);
-
     void setAttackTime(float attackMs);
     void setReleaseTime(float releaseMs);
     void setAttackTimeSeconds(double attackSec);
