@@ -45,18 +45,18 @@ private:
 
     // Pre-allocated buffer to avoid audio-thread allocation
     juce::AudioBuffer<float> octaveBuffer;
-
-    std::array<float, 2> previousSample = { 0.0f, 0.0f };
     float lastOctaveLevel = 0.0f;
 
-    // Post-rectification smoothing coefficient (computed in prepare)
-    float smoothingCoeff = 0.75f;
-
-    static constexpr float preHPFreq = 150.0f;
+    // Voicing: preHP at 40Hz keeps downtuned fundamentals feeding the rectifier
+    // (rectification doubles f — kill 82Hz in and there is no 164Hz octave out).
+    // Broad low-Q bandpass at 600Hz spans the doubled-fundamental range
+    // (~160Hz-1.3kHz) instead of notching it out.
+    static constexpr float preHPFreq = 40.0f;
     static constexpr float preLPFreq = 4000.0f;
     static constexpr float dcBlockFreq = 20.0f;
-    static constexpr float bandpassFreq = 1200.0f;
-    static constexpr float bandpassQ = 0.8f;
+    static constexpr float bandpassFreq = 600.0f;
+    static constexpr float bandpassQ = 0.5f;
+    static constexpr float emphasisHPFreq = 150.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OctaveGenerator)
 };

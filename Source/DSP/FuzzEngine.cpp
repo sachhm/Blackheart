@@ -165,8 +165,9 @@ float FuzzEngine::germaniumWaveshape(float sample, float drive, float asymmetry)
         // Negative half: harder clipping, lower threshold (PNP germanium asymmetry)
         const float asymDrive = 1.0f + asymmetry * 2.5f;
         shaped = -LookupTables::fastTanh(-driven * asymDrive * 0.6f);
-        // Add even harmonic content
-        shaped += asymmetry * 0.08f * LookupTables::fastTanhPoly(driven * 2.0f);
+        // Even harmonic content from the unscaled input — using the driven
+        // sample saturated to a constant and injected pure DC bias instead
+        shaped += asymmetry * 0.08f * LookupTables::fastTanhPoly(sample * 2.0f);
     }
 
     return shaped;
@@ -277,11 +278,13 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
             // Voltage sag: reduce clipping headroom under sustained signal
             const float sagFactor = 1.0f - sagEnvelope[ch] * 0.3f;
 
-            // Soft compression before clipping
+            // Soft compression before clipping — ratio scales with gain so
+            // compression is strongest at high gain (gain-dependent squash),
+            // not weakest where the threshold is lowest
             const float threshold = (0.3f + (1.0f - currentGain) * 0.5f) * sagFactor;
             if (inputLevel > threshold && inputLevel > 0.0f)
             {
-                constexpr float ratio = 4.0f;
+                const float ratio = 4.0f + currentGain * 8.0f;
                 const float compGain = (threshold + (inputLevel - threshold) / ratio) / inputLevel;
                 inputSample *= compGain;
             }
@@ -297,10 +300,12 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
 
             float out = shaped * makeupGain * levelGain;
 
-            // Bound output: +24dB level can push ~10x full scale otherwise
+            // Bound output: linear below 1.0, soft knee caps at 1.2 — closes
+            // the stage's gain budget instead of leaking up to ~3x full scale
+            // and relying on downstream limiting
             const float absOut = std::abs(out);
-            if (absOut > 2.0f)
-                out = (out > 0.0f ? 1.0f : -1.0f) * (2.0f + LookupTables::fastTanh(absOut - 2.0f));
+            if (absOut > 1.0f)
+                out = (out > 0.0f ? 1.0f : -1.0f) * (1.0f + LookupTables::fastTanh((absOut - 1.0f) * 2.0f) * 0.2f);
 
             data[sample] = out;
         }

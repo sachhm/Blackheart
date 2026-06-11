@@ -336,10 +336,10 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 const float dryAbs = std::abs(dryInput);
                 const float wetAbs = std::abs(wetOutput);
 
-                const float dryCoeff = (dryAbs > dryEnvelope[ch]) ? envelopeAttack : envelopeRelease;
+                const float dryCoeff = (dryAbs > dryEnvelope[ch]) ? envelopeAttackCoeff : envelopeReleaseCoeff;
                 dryEnvelope[ch] += dryCoeff * (dryAbs - dryEnvelope[ch]);
 
-                const float wetCoeff = (wetAbs > wetEnvelope[ch]) ? envelopeAttack : envelopeRelease;
+                const float wetCoeff = (wetAbs > wetEnvelope[ch]) ? envelopeAttackCoeff : envelopeReleaseCoeff;
                 wetEnvelope[ch] += wetCoeff * (wetAbs - wetEnvelope[ch]);
 
                 if (wetEnvelope[ch] > 0.0001f && dryEnvelope[ch] > 0.0001f)

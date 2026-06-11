@@ -44,17 +44,14 @@ void OctaveGenerator::prepare(const juce::dsp::ProcessSpec& spec)
 
     octaveHighShelf.prepare(osSpec);
     octaveHighShelf.setType(juce::dsp::StateVariableTPTFilterType::highpass);
-    octaveHighShelf.setCutoffFrequency(800.0f);
+    // 150Hz: trims sub-octave rumble while passing the doubled low-E (164Hz).
+    // The old 800Hz corner removed the octave fundamental for most of the neck.
+    octaveHighShelf.setCutoffFrequency(emphasisHPFreq);
     octaveHighShelf.setResonance(0.5f);
-
-    // Compute post-rectification smoothing at oversampled rate (~2kHz cutoff)
-    smoothingCoeff = static_cast<float>(std::exp(-2.0 * juce::MathConstants<double>::pi * 2000.0 / osRate));
 
     // Pre-allocate buffer to avoid audio thread allocation
     octaveBuffer.setSize(numChannels, maxBlockSize, false, true, true);
 
-    previousSample[0] = 0.0f;
-    previousSample[1] = 0.0f;
     lastOctaveLevel = 0.0f;
 }
 
@@ -69,8 +66,6 @@ void OctaveGenerator::reset()
     octaveBandpass.reset();
     octaveHighShelf.reset();
 
-    previousSample[0] = 0.0f;
-    previousSample[1] = 0.0f;
     lastOctaveLevel = 0.0f;
 }
 
@@ -112,22 +107,15 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
         preEmphasisLP.process(context);
     }
 
-    // Full-wave rectification with smoothing at oversampled rate
+    // Full-wave rectification at oversampled rate. No smoothing: a lowpass here
+    // turns the rectified wave into an amplitude envelope and strips the doubled
+    // frequency the whole stage exists to produce — DC block below handles offset
     for (size_t channel = 0; channel < osNumChannels; ++channel)
     {
         float* octaveData = oversampledBlock.getChannelPointer(channel);
-        float prevSample = previousSample[channel];
-        const float inputCoeff = 1.0f - smoothingCoeff;
 
         for (size_t sample = 0; sample < osNumSamples; ++sample)
-        {
-            const float rectified = std::abs(octaveData[sample]);
-            const float smoothed = rectified * inputCoeff + prevSample * smoothingCoeff;
-            prevSample = smoothed;
-            octaveData[sample] = smoothed;
-        }
-
-        previousSample[channel] = prevSample;
+            octaveData[sample] = std::abs(octaveData[sample]);
     }
 
     // Post-rectification filtering at oversampled rate
@@ -156,7 +144,7 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
         const float currentGlare = glare.getTargetValue();
         // Use glare^1.5 curve for smoother blend progression (less abrupt than glare^2)
         const float glareCurved = std::pow(currentGlare, 1.5f);
-        const float octaveGain = glareCurved * 1.6f;
+        const float octaveGain = glareCurved * 1.2f;
 
         if (octaveGain > 0.0001f)
         {
@@ -180,7 +168,7 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
         {
             const float currentGlare = glare.getNextValue();
             const float glareCurved = std::pow(currentGlare, 1.5f);
-            const float octaveGain = glareCurved * 1.6f;
+            const float octaveGain = glareCurved * 1.2f;
 
             for (int channel = 0; channel < channels; ++channel)
             {
