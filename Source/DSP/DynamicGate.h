@@ -48,11 +48,6 @@ private:
     float lastGlareRelease = -1.0f;
 
     static constexpr float kneeWidth = 0.15f;
-    static constexpr float hysteresisDb = 3.0f;
-
-    bool gateOpen = true;
-    float hysteresisThresholdHigh = 0.0f;
-    float hysteresisThresholdLow = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicGate)
 };

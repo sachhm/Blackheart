@@ -142,8 +142,9 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
     if (!glare.isSmoothing())
     {
         const float currentGlare = glare.getTargetValue();
-        // Use glare^1.5 curve for smoother blend progression (less abrupt than glare^2)
-        const float glareCurved = std::pow(currentGlare, 1.5f);
+        // glare^1.5 curve for smoother blend progression (less abrupt than glare^2);
+        // x*sqrt(x) avoids std::pow on the audio thread
+        const float glareCurved = currentGlare * std::sqrt(currentGlare);
         const float octaveGain = glareCurved * 1.2f;
 
         if (octaveGain > 0.0001f)
@@ -167,7 +168,7 @@ void OctaveGenerator::process(juce::AudioBuffer<float>& buffer)
         for (int sample = 0; sample < numSamples; ++sample)
         {
             const float currentGlare = glare.getNextValue();
-            const float glareCurved = std::pow(currentGlare, 1.5f);
+            const float glareCurved = currentGlare * std::sqrt(currentGlare);
             const float octaveGain = glareCurved * 1.2f;
 
             for (int channel = 0; channel < channels; ++channel)

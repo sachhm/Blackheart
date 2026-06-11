@@ -17,19 +17,13 @@ void DynamicGate::prepare(const juce::dsp::ProcessSpec& spec)
 
     gateGain.reset(sampleRate, 0.015);
 
-    gateOpen = true;
     lastGateGain = 1.0f;
-
-    const float threshold = calculateDynamicThreshold();
-    hysteresisThresholdHigh = threshold;
-    hysteresisThresholdLow = threshold * juce::Decibels::decibelsToGain(-hysteresisDb);
 }
 
 void DynamicGate::reset()
 {
     envelopeFollower.reset();
     gateGain.reset(sampleRate, 0.015);
-    gateOpen = true;
     lastGateGain = 1.0f;
 }
 
@@ -39,9 +33,6 @@ void DynamicGate::process(juce::AudioBuffer<float>& buffer)
     const int numChannels = buffer.getNumChannels();
 
     const float dynamicThreshold = calculateDynamicThreshold();
-
-    hysteresisThresholdHigh = dynamicThreshold;
-    hysteresisThresholdLow = dynamicThreshold * juce::Decibels::decibelsToGain(-hysteresisDb);
 
     // Glare-dependent release: faster at high glare for spitty texture.
     // Only recompute coefficients (std::exp) when the value actually changes.
@@ -65,17 +56,9 @@ void DynamicGate::process(juce::AudioBuffer<float>& buffer)
 
         const float envelope = envelopeFollower.processSample(maxLevel);
 
-        if (gateOpen)
-        {
-            if (envelope < hysteresisThresholdLow)
-                gateOpen = false;
-        }
-        else
-        {
-            if (envelope > hysteresisThresholdHigh)
-                gateOpen = true;
-        }
-
+        // No hysteresis: the smooth knee in calculateGateGain provides the
+        // continuous gate/expander behavior; chatter is masked by the 15ms
+        // gain smoother rather than a binary open/closed state
         const float targetGain = calculateGateGain(envelope, dynamicThreshold);
 
         gateGain.setTargetValue(targetGain);

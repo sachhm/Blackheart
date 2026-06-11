@@ -96,8 +96,8 @@ private:
     float ringModFreq = 0.0f;
     float ringModMix = 0.0f;
 
-    // Feedback
-    float feedbackSample = 0.0f;
+    // Feedback (per channel — shared scalar collapses stereo to mono)
+    std::array<float, 2> feedbackSamples {};
 
     // Gain compensation envelopes (per channel — shared state skews stereo)
     std::array<float, 2> dryEnvelope {};

@@ -597,9 +597,13 @@ void BlackheartAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // Host violated prepareToPlay contract — never allocate on audio thread
     if (dryBuffer.getNumSamples() < numSamples || dryBuffer.getNumChannels() < numChannels
         || stagingBuffer.getNumSamples() < numSamples || stagingBuffer.getNumChannels() < numChannels
-        || prePitchDryBuffer.getNumSamples() < numSamples || prePitchDryBuffer.getNumChannels() < numChannels)
+        || prePitchDryBuffer.getNumSamples() < numSamples || prePitchDryBuffer.getNumChannels() < numChannels
+        || pitchModBuffer.size() < static_cast<size_t>(numSamples)
+        || grainModBuffer.size() < static_cast<size_t>(numSamples)
+        || timingModBuffer.size() < static_cast<size_t>(numSamples))
     {
         buffer.clear();
+        smoothedParams.chaosMix.skip(numSamples);
         return;
     }
 

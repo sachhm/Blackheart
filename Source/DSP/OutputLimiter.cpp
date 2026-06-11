@@ -32,6 +32,9 @@ void OutputLimiter::reset()
 {
     outputLevel.reset(sampleRate, 0.02);
     gainReduction.reset(sampleRate, 0.005);
+    // reset() snaps SmoothedValue to its target — if a limit was in progress
+    // that target is a reduction value, leaving the limiter stuck attenuated
+    gainReduction.setCurrentAndTargetValue(1.0f);
     envelope = 0.0f;
     lastGainReduction = 0.0f;
     dcBlockFilter.reset();

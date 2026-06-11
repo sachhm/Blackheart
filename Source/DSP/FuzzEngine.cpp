@@ -356,7 +356,16 @@ void FuzzEngine::process(juce::AudioBuffer<float>& buffer)
                 const float dry = data[i];
                 const float mid = shapeMidEQ.processSample(static_cast<int>(ch), dry);
                 const float low = shapeLowEQ.processSample(static_cast<int>(ch), dry);
-                data[i] = dry + mid * (shapeGain - 1.0f) + (low - dry) * lowGain * 0.3f;
+                float out = dry + mid * (shapeGain - 1.0f) + (low - dry) * lowGain * 0.3f;
+
+                // SHAPE EQ is additive (mid gain up to 3.3x, resonant bandpass) and
+                // runs after the waveshaper's 1.2 budget clamp — re-close the budget
+                // here or the stage leaks up to ~3-4x full scale at high SHAPE
+                const float absOut = std::abs(out);
+                if (absOut > 1.0f)
+                    out = (out > 0.0f ? 1.0f : -1.0f) * (1.0f + LookupTables::fastTanh((absOut - 1.0f) * 2.0f) * 0.2f);
+
+                data[i] = out;
             }
         }
     }

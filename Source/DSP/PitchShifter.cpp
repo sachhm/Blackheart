@@ -49,7 +49,7 @@ void PitchShifter::prepare(const juce::dsp::ProcessSpec& spec)
     mixSmoothState = 0.0f;
     currentPitchRatio = 1.0f;
     currentMix = 0.0f;
-    feedbackSample = 0.0f;
+    feedbackSamples.fill(0.0f);
     ringModPhase = 0.0f;
     ringModFreq = 0.0f;
     ringModMix = 0.0f;
@@ -79,7 +79,7 @@ void PitchShifter::reset()
     mixSmoothState = 0.0f;
     currentPitchRatio = 1.0f;
     currentMix = 0.0f;
-    feedbackSample = 0.0f;
+    feedbackSamples.fill(0.0f);
     ringModPhase = 0.0f;
     dryEnvelope.fill(0.0f);
     wetEnvelope.fill(0.0f);
@@ -215,7 +215,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             if (!std::isfinite(inputSample)) inputSample = 0.0f;
 
             const float feedbackAmount = chaosVal * 0.4f;
-            const float feedbackInput = inputSample + std::tanh(feedbackSample * feedbackAmount) * feedbackAmount;
+            const float feedbackInput = inputSample + std::tanh(feedbackSamples[ch] * feedbackAmount) * feedbackAmount;
             delayBuffer[ch][writePosition] = feedbackInput;
         }
 
@@ -264,8 +264,6 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
         // Detune ratios for PANIC
         const float detuneUp = 1.0f + panicVal * 0.15f;
         const float detuneDown = 1.0f - panicVal * 0.15f;
-
-        float wetSumMono = 0.0f;
 
         for (int ch = 0; ch < processChannels; ++ch)
         {
@@ -359,11 +357,8 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
                 finalOutput = dryInput;
 
             channelData[ch][sample] = finalOutput;
-            wetSumMono += wetOutput;
+            feedbackSamples[ch] = std::tanh(wetOutput);
         }
-
-        // Store feedback sample
-        feedbackSample = std::tanh(wetSumMono / static_cast<float>(processChannels));
 
         // Advance main heads
         for (int h = 0; h < numMainHeads; ++h)
@@ -439,7 +434,7 @@ void PitchShifter::process(juce::AudioBuffer<float>& buffer)
             {
                 mixSmoothState = 0.0f;
                 currentPitchRatio = 1.0f;
-                feedbackSample = 0.0f;
+                feedbackSamples.fill(0.0f);
             }
         }
     }
