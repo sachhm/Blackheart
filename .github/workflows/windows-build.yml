@@ -1,0 +1,53 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # JUCE version. Project uses bleeding-edge modules (juce_audio_processors_headless,
+  # VS2026 exporter) so default to develop. Pin to a tag (e.g. 8.0.8) if a JUCE
+  # change breaks the build.
+  JUCE_REF: develop
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Blackheart
+        uses: actions/checkout@v4
+
+      - name: Checkout JUCE
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_REF }}
+          path: JUCE
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build Projucer
+        run: msbuild JUCE\extras\Projucer\Builds\VisualStudio2022\Projucer.sln /p:Configuration=Release /p:Platform=x64 /m
+
+      - name: Configure JUCE global module path
+        run: JUCE\extras\Projucer\Builds\VisualStudio2022\x64\Release\App\Projucer.exe --set-global-search-path windows defaultJuceModulePath "${{ github.workspace }}\JUCE\modules"
+
+      - name: Resave project
+        run: JUCE\extras\Projucer\Builds\VisualStudio2022\x64\Release\App\Projucer.exe --resave Blackheart.jucer
+
+      - name: Build plugin (Release x64)
+        run: msbuild Builds\VisualStudio2022\Blackheart.sln /p:Configuration=Release /p:Platform=x64 /m
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blackheart-Windows-VST3
+          path: |
+            Builds/VisualStudio2022/x64/Release/VST3/**/*.vst3
+            Builds/VisualStudio2022/x64/Release/Standalone Plugin/**/*.exe
+          if-no-files-found: warn
