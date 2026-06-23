@@ -60,7 +60,7 @@ jobs:
       - name: Package release zip
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
-        run: Compress-Archive -Path "Builds/VisualStudio2022/x64/Release/VST3/*" -DestinationPath "Blackheart-${{ github.ref_name }}-Windows-VST3.zip"
+        run: Compress-Archive -Path "Builds/VisualStudio2022/x64/Release/VST3/Blackheart.vst3" -DestinationPath "Blackheart-${{ github.ref_name }}-Windows-VST3.zip"
 
       - name: Publish to Releases
         if: startsWith(github.ref, 'refs/tags/')
