@@ -1,5 +1,5 @@
 # Blackheart
-![alt text](Images/v2.png)
+![Blackheart UI](Images/v3.png)
 A JUCE-based VST3 audio effect plugin combining analog-style octave fuzz with chaotic digital pitch-shifting and modulation. Designed for heavy, downtuned guitar and experimental sound design.
 
 ## Project Overview
@@ -31,6 +31,7 @@ The initial prototype of Blackheart was developed with AI assistance. I am now r
 | Chaos | Modulation depth + randomness |
 | Rise | Pitch shift attack time |
 | Panic | Detuned pitch destruction — subtle chorus to full atonal chaos |
+| Mix | Dry/wet mix of the pitch-shift & chaos block |
 | Octave +1 | Momentary +1 octave pitch shift |
 | Octave +2 | Momentary +2 octave pitch shift |
 
